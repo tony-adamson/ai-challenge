@@ -17,12 +17,12 @@ fn provider(name: &str) -> Result<Provider, String> {
     match name {
         "deepseek" => Ok(Provider {
             base_url: "https://api.deepseek.com/v1",
-            default_model: "deepseek-chat",
+            default_model: "deepseek-v4-flash",
             key_var: "DEEPSEEK_API_KEY",
         }),
         "openrouter" => Ok(Provider {
             base_url: "https://openrouter.ai/api/v1",
-            default_model: "deepseek/deepseek-chat",
+            default_model: "deepseek/deepseek-v4-flash",
             key_var: "OPENROUTER_API_KEY",
         }),
         other => Err(format!(
