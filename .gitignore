@@ -1,0 +1,14 @@
+# Секреты
+.env
+
+# Rust
+target/
+**/target/
+
+# Python (для дней, где нужна ML-экосистема)
+.venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
