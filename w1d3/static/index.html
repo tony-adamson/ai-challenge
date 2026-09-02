@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>w1d3 — четыре способа рассуждения</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel-2: #1e222b; --line: #2a2f3a;
+    --text: #e6e8ee; --muted: #8b93a7; --accent: #7aa2f7; --ok: #4ade80; --bad: #f87171; --warn: #fbbf24;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, "Segoe UI", Inter, sans-serif; }
+  header { display: flex; align-items: baseline; gap: 14px; padding: 18px 28px 10px; }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header .sub { color: var(--muted); }
+  main { padding: 0 28px 40px; display: grid; gap: 18px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+  form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; align-items: start; }
+  form .full { grid-column: 1 / -1; }
+  label.field { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+  input[type=text], input[type=number], select, textarea {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; width: 100%;
+  }
+  textarea { min-height: 76px; resize: vertical; }
+  .choices { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+  .choices label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  button { background: var(--accent); color: #0b1020; border: 0; border-radius: 6px; padding: 9px 18px; font: inherit; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  .actions { display: flex; gap: 14px; align-items: center; }
+  #status { color: var(--muted); }
+  #status.err { color: var(--bad); }
+  #taskbar { display: none; gap: 6px; }
+  #taskbar .task { font-size: 15px; }
+  #taskbar .meta { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  .row-title { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; margin: 6px 0; }
+  .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; min-height: 220px; max-height: 60vh; }
+  .card-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .card-head b { font-weight: 600; }
+  .dots { display: flex; gap: 3px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.unk { background: var(--warn); } .dot.live { background: var(--accent); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .card-body { padding: 8px 12px; overflow: auto; flex: 1; font-size: 13px; }
+  .card-body h4 { margin: 10px 0 4px; font-size: 11px; color: var(--accent); text-transform: uppercase; letter-spacing: .06em; }
+  .card-body h4:first-child { margin-top: 2px; }
+  .card-body details.think { color: var(--muted); font-size: 12px; margin: 2px 0 6px; }
+  .card-body details.think summary { cursor: pointer; font-family: var(--mono); font-size: 11px; }
+  .card-body details.think .think-text { white-space: pre-wrap; max-height: 180px; overflow: auto; padding: 4px 8px; border-left: 2px solid var(--line); margin-top: 4px; }
+  .card-body p { margin: 4px 0; } .card-body pre { white-space: pre-wrap; background: var(--panel-2); padding: 6px 8px; border-radius: 6px; }
+  .card-body table { border-collapse: collapse; } .card-body td, .card-body th { border: 1px solid var(--line); padding: 2px 6px; }
+  .card-foot { padding: 8px 12px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+  .card-foot .answer { color: var(--text); }
+  .card-foot .answer.ok { color: var(--ok); } .card-foot .answer.bad { color: var(--bad); } .card-foot .answer.unk { color: var(--warn); }
+  .card.error { border-color: var(--bad); }
+  table.summary { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  table.summary th, table.summary td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+  table.summary th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  table.summary td.num { font-family: var(--mono); }
+  .bar { display: inline-block; height: 8px; background: var(--ok); border-radius: 4px; vertical-align: middle; margin-right: 8px; }
+  #summary { display: none; }
+  .hint { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>AI Advent · w1d3</h1>
+  <span class="sub">одна задача · четыре способа рассуждения · N прогонов</span>
+</header>
+<main>
+  <section class="panel">
+    <form id="form">
+      <div class="choices full">
+        <label><input type="radio" name="mode" value="bench" checked> Бенчмарк: задачи с известным ответом генерирует Rust</label>
+        <label><input type="radio" name="mode" value="custom"> Своя задача</label>
+      </div>
+      <div id="bench-fields" class="full">
+        <label class="field">Тип задачи
+          <select id="kind"><option value="random">Случайный</option></select>
+        </label>
+      </div>
+      <div id="custom-fields" class="full" style="display:none; gap:12px; grid-template-columns: 2fr 1fr;">
+        <label class="field">Задача
+          <textarea id="task" placeholder="Логическая, алгоритмическая или аналитическая задача"></textarea>
+        </label>
+        <label class="field">Правильный ответ (если знаешь)
+          <input type="text" id="expected" placeholder="пусто — оценит модель-судья">
+          <span class="hint">С эталоном точность считается честно, без него — слепым судьёй (основная модель видит только задачу и итог).</span>
+        </label>
+      </div>
+      <label class="field">Прогонов
+        <input type="number" id="runs" value="3" min="1" max="20">
+      </label>
+      <div class="field"><span>Модели</span><div class="choices" id="models"></div></div>
+      <div class="actions full">
+        <button type="submit" id="go">Запустить</button>
+        <span id="status"></span>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel" id="taskbar">
+    <div class="task" id="task-text"></div>
+    <div class="meta" id="task-meta"></div>
+  </section>
+
+  <section id="board"></section>
+
+  <section class="panel" id="summary">
+    <div class="row-title">Сводка</div>
+    <table class="summary">
+      <thead><tr><th>Модель</th><th>Способ</th><th>Точность</th><th>Среднее время</th><th>Токены ответа</th><th>Токены рассуждения</th><th>Ошибок</th></tr></thead>
+      <tbody id="summary-body"></tbody>
+    </table>
+    <p class="hint" id="report-hint"></p>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let config = { models: [], methods: [], kinds: [] };
+const cells = {};   // id -> { body, foot, dots, sections: {name: text}, order: [] }
+let totalRuns = 0;
+
+const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const render = (text) => (window.marked ? marked.parse(text) : '<pre>' + escapeHtml(text) + '</pre>');
+
+async function init() {
+  config = await (await fetch('/config')).json();
+  for (const k of config.kinds) {
+    const o = document.createElement('option'); o.value = k.id; o.textContent = k.label; $('kind').append(o);
+  }
+  for (const m of config.models) {
+    const l = document.createElement('label');
+    l.innerHTML = `<input type="checkbox" value="${m.id}" checked> ${m.label}`;
+    $('models').append(l);
+  }
+  buildBoard();
+  document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', syncMode));
+  syncMode();
+  listen();
+}
+
+function syncMode() {
+  const custom = document.querySelector('input[name=mode]:checked').value === 'custom';
+  $('bench-fields').style.display = custom ? 'none' : '';
+  $('custom-fields').style.display = custom ? 'grid' : 'none';
+}
+
+function buildBoard() {
+  const board = $('board'); board.innerHTML = '';
+  for (const m of config.models) {
+    const title = document.createElement('div'); title.className = 'row-title'; title.textContent = m.label; board.append(title);
+    const grid = document.createElement('div'); grid.className = 'grid'; board.append(grid);
+    for (const method of config.methods) {
+      const id = `${m.id}-${method.id}`;
+      const card = document.createElement('div'); card.className = 'card'; card.dataset.model = m.id;
+      card.innerHTML = `<div class="card-head"><b>${method.label}</b><div class="dots"></div></div>
+        <div class="card-body"><span class="hint">ожидание…</span></div>
+        <div class="card-foot"><span class="answer"></span><span class="stats"></span></div>`;
+      grid.append(card);
+      cells[id] = { card, body: card.querySelector('.card-body'), answer: card.querySelector('.answer'),
+        stats: card.querySelector('.stats'), dots: card.querySelector('.dots'), sections: {}, order: [], dirty: false };
+    }
+  }
+}
+
+function resetCell(cell) {
+  cell.sections = {}; cell.order = []; cell.body.innerHTML = ''; cell.answer.textContent = ''; cell.answer.className = 'answer';
+  cell.stats.textContent = ''; cell.card.classList.remove('error');
+}
+
+function paint(cell) {
+  cell.dirty = false;
+  const stick = cell.body.scrollTop + cell.body.clientHeight >= cell.body.scrollHeight - 24;
+  cell.body.innerHTML = cell.order.map((name) => {
+    const s = cell.sections[name];
+    // Блок размышления раскрыт, пока ответа ещё нет, и сворачивается, когда он пошёл.
+    const think = s.think ? `<details class="think"${s.text ? '' : ' open'}><summary>🧠 размышление · ${s.think.length} симв.</summary><div class="think-text">${escapeHtml(s.think)}</div></details>` : '';
+    return `<h4>${escapeHtml(name)}</h4>${think}${render(s.text)}`;
+  }).join('');
+  cell.body.querySelectorAll('.think-text').forEach((t) => { t.scrollTop = t.scrollHeight; });
+  if (stick) cell.body.scrollTop = cell.body.scrollHeight;
+}
+
+function schedule(cell) {
+  if (cell.dirty) return;
+  cell.dirty = true;
+  requestAnimationFrame(() => paint(cell));
+}
+
+function setDot(cell, run, cls) {
+  let dot = cell.dots.children[run - 1];
+  if (!dot) { dot = document.createElement('span'); cell.dots.append(dot); }
+  dot.className = 'dot ' + cls;
+}
+
+function handle(ev) {
+  const cell = cells[ev.cell];
+  switch (ev.type) {
+    case 'run_start':
+      totalRuns = ev.total;
+      $('taskbar').style.display = 'grid';
+      $('task-text').textContent = `Прогон ${ev.run}/${ev.total} · ${ev.task}`;
+      $('task-meta').textContent = ev.expected == null ? 'эталона нет — оценивает судья' : `эталон: ${ev.expected}`;
+      for (const c of Object.values(cells)) { resetCell(c); c.body.innerHTML = '<span class="hint">ожидание…</span>'; }
+      $('status').textContent = `идёт прогон ${ev.run} из ${ev.total}`;
+      break;
+    case 'cell_start': setDot(cell, ev.run, 'live'); break;
+    case 'section':
+      if (!(ev.name in cell.sections)) { cell.sections[ev.name] = { text: '', think: '' }; cell.order.push(ev.name); schedule(cell); }
+      break;
+    case 'token': {
+      let s = cell.sections[ev.section];
+      if (!s) { s = cell.sections[ev.section] = { text: '', think: '' }; cell.order.push(ev.section); }
+      if (ev.thinking) s.think += ev.text; else s.text += ev.text;
+      schedule(cell); break;
+    }
+    case 'judging': cell.answer.textContent = 'судья оценивает…'; break;
+    case 'cell_done': {
+      const cls = ev.correct === true ? 'ok' : ev.correct === false ? 'bad' : 'unk';
+      const mark = ev.correct === true ? '✓' : ev.correct === false ? '✗' : '?';
+      setDot(cell, ev.run, cls);
+      cell.answer.className = 'answer ' + cls;
+      cell.answer.textContent = `${mark} ${ev.answer} · ${ev.source}`;
+      cell.stats.textContent = `${(ev.ms / 1000).toFixed(1)} с · ${ev.completion_tokens} ткн` + (ev.reasoning_tokens ? ` · 🧠 ${ev.reasoning_tokens}` : '') + (ev.calls > 1 ? ` · ${ev.calls} вызова` : '');
+      break;
+    }
+    case 'cell_error':
+      setDot(cell, ev.run, 'bad'); cell.card.classList.add('error');
+      cell.answer.className = 'answer bad'; cell.answer.textContent = '⚠ ' + ev.error;
+      break;
+    case 'summary': showSummary(ev.rows); break;
+    case 'finished':
+      $('status').textContent = `готово · отчёт: w1d3/${ev.report}`;
+      $('go').disabled = false;
+      break;
+  }
+}
+
+function showSummary(rows) {
+  $('summary').style.display = 'block';
+  const body = $('summary-body'); body.innerHTML = '';
+  for (const r of rows) {
+    const pct = r.judged ? Math.round(100 * r.correct / r.judged) : 0;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r.model}</td><td>${r.method}</td>
+      <td class="num"><span class="bar" style="width:${pct}px"></span>${r.correct}/${r.judged}${r.judged ? ` (${pct}%)` : ''}</td>
+      <td class="num">${(r.avg_ms / 1000).toFixed(1)} с</td><td class="num">${r.avg_tokens}</td><td class="num">${r.avg_reasoning}</td><td class="num">${r.errors}</td>`;
+    body.append(tr);
+  }
+}
+
+function listen() {
+  const source = new EventSource('/events');
+  source.onmessage = (e) => handle(JSON.parse(e.data));
+  source.onerror = () => { $('status').textContent = 'связь с сервером потеряна'; $('status').className = 'err'; };
+}
+
+$('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const req = {
+    mode: document.querySelector('input[name=mode]:checked').value,
+    kind: $('kind').value, task: $('task').value, expected: $('expected').value,
+    runs: Number($('runs').value),
+    models: [...document.querySelectorAll('#models input:checked')].map((i) => i.value),
+  };
+  $('status').className = '';
+  const res = await fetch('/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req) });
+  if (!res.ok) { $('status').textContent = await res.text(); $('status').className = 'err'; return; }
+  $('go').disabled = true;
+  $('summary').style.display = 'none';
+  for (const c of Object.values(cells)) c.dots.innerHTML = '';
+  document.querySelectorAll('#board .card').forEach((card) => card.style.display = req.models.includes(card.dataset.model) ? '' : 'none');
+  document.querySelectorAll('#board .row-title').forEach((t, i) => t.style.display = req.models.includes(config.models[i].id) ? '' : 'none');
+});
+
+init();
+</script>
+</body>
+</html>
