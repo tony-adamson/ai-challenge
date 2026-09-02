@@ -161,6 +161,32 @@ fn days_from_civil(d: Date) -> i64 {
     era * 146_097 + doe - 719_468
 }
 
+/// Обратный алгоритм: дата по числу дней от 1970-01-01 (civil_from_days).
+fn civil_from_days(days: i64) -> Date {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + if month <= 2 { 1 } else { 0 };
+    Date { year, month, day }
+}
+
+/// Штамп для отчёта. Без `chrono` и без внешнего `date`: минуты по UTC
+/// хватает, чтобы отличить один прогон от другого.
+pub fn utc_stamp() -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let d = civil_from_days(secs.div_euclid(86_400));
+    let rem = secs.rem_euclid(86_400);
+    format!("{:04}-{:02}-{:02} {:02}:{:02} UTC", d.year, d.month, d.day, rem / 3600, rem % 3600 / 60)
+}
+
 /// Итог из ответа модели: содержимое последней строки с «ОТВЕТ:», иначе
 /// последняя непустая строка.
 pub fn extract_answer(content: &str) -> String {
@@ -174,7 +200,7 @@ pub fn extract_answer(content: &str) -> String {
     normalize(content.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or(""))
 }
 
-pub fn normalize(text: &str) -> String {
+fn normalize(text: &str) -> String {
     let trimmed = text
         .trim()
         .trim_matches(|c: char| "«»\"'`.:;!?() ".contains(c))
@@ -230,6 +256,11 @@ mod tests {
         // 2026-09-02 — среда.
         let today = Date { year: 2026, month: 9, day: 2 };
         assert_eq!(WEEKDAYS[(days_from_civil(today) + 3).rem_euclid(7) as usize], "среда");
+        // Обратный алгоритм возвращает те же даты.
+        for date in [millennium, today, Date { year: 1900, month: 3, day: 1 }, Date { year: 2024, month: 2, day: 29 }] {
+            let back = civil_from_days(days_from_civil(date));
+            assert_eq!((back.year, back.month, back.day), (date.year, date.month, date.day));
+        }
     }
 
     #[test]

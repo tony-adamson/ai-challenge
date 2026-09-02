@@ -6,8 +6,7 @@ mod methods;
 mod tasks;
 
 use std::convert::Infallible;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use axum::extract::State;
@@ -19,6 +18,8 @@ use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::broadcast;
+use tokio::task::{JoinHandle, JoinSet};
+use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::{Stream, StreamExt};
 
@@ -28,9 +29,15 @@ use tasks::Rng;
 
 const ADDR: &str = "127.0.0.1:8787";
 
+/// Отчёт лежит рядом с Cargo.toml независимо от того, откуда запущен бинарник:
+/// в .gitignore он прописан именно по этому пути.
+const REPORT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/REPORT.md");
+
 struct App {
     tx: broadcast::Sender<String>,
-    running: AtomicBool,
+    /// Текущий эксперимент. Живой хэндл — эксперимент идёт; по нему же
+    /// работает остановка, а паника внутри не оставляет «вечно занято».
+    experiment: Mutex<Option<JoinHandle<()>>>,
     client: reqwest::Client,
     models: Vec<Model>,
 }
@@ -74,7 +81,7 @@ async fn start() -> Result<(), String> {
     let (tx, _) = broadcast::channel(1 << 16);
     let app = Arc::new(App {
         tx,
-        running: AtomicBool::new(false),
+        experiment: Mutex::new(None),
         client: llm::build_client()?,
         models,
     });
@@ -83,6 +90,7 @@ async fn start() -> Result<(), String> {
         .route("/", get(index))
         .route("/config", get(config))
         .route("/run", post(run))
+        .route("/stop", post(stop))
         .route("/events", get(events))
         .with_state(app);
 
@@ -129,9 +137,17 @@ async fn config(State(app): State<Arc<App>>) -> Json<Value> {
 async fn events(
     State(app): State<Arc<App>>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let stream = BroadcastStream::new(app.tx.subscribe())
-        .filter_map(|message| message.ok())
-        .map(|json| Ok(Event::default().data(json)));
+    let stream = BroadcastStream::new(app.tx.subscribe()).map(|message| {
+        let data = match message {
+            Ok(json) => json,
+            // Потребитель отстал от канала: сообщения потеряны, и клиент
+            // должен об этом узнать, а не увидеть дыру в тексте.
+            Err(BroadcastStreamRecvError::Lagged(count)) => {
+                json!({ "type": "lagged", "count": count }).to_string()
+            }
+        };
+        Ok(Event::default().data(data))
+    });
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
@@ -151,14 +167,28 @@ async fn run(State(app): State<Arc<App>>, Json(req): Json<RunRequest>) -> (Statu
     if selected.is_empty() {
         return (StatusCode::BAD_REQUEST, "выбери хотя бы одну модель".to_string());
     }
-    if app.running.swap(true, Ordering::SeqCst) {
+
+    let mut slot = app.experiment.lock().unwrap_or_else(|e| e.into_inner());
+    if slot.as_ref().is_some_and(|handle| !handle.is_finished()) {
         return (StatusCode::CONFLICT, "эксперимент уже идёт".to_string());
     }
-    tokio::spawn(async move {
-        experiment(app.clone(), req, selected).await;
-        app.running.store(false, Ordering::SeqCst);
-    });
+    let inner = tokio::spawn(experiment(app.clone(), req, selected));
+    *slot = Some(inner);
     (StatusCode::ACCEPTED, "ok".to_string())
+}
+
+async fn stop(State(app): State<Arc<App>>) -> (StatusCode, String) {
+    let handle = app.experiment.lock().unwrap_or_else(|e| e.into_inner()).take();
+    match handle {
+        Some(handle) if !handle.is_finished() => {
+            // Отмена задачи эксперимента роняет её JoinSet, а с ним и все
+            // ячейки: платные вызовы к API прекращаются.
+            handle.abort();
+            let _ = app.tx.send(json!({ "type": "stopped" }).to_string());
+            (StatusCode::OK, "остановлено".to_string())
+        }
+        _ => (StatusCode::CONFLICT, "эксперимент не идёт".to_string()),
+    }
 }
 
 struct CellResult {
@@ -195,7 +225,7 @@ async fn experiment(app: Arc<App>, req: RunRequest, models: Vec<Model>) {
                 .to_string(),
         );
 
-        let mut handles = Vec::new();
+        let mut cells = JoinSet::new();
         for model in &models {
             for method in Method::ALL {
                 let cell = Cell { tx: app.tx.clone(), id: format!("{}-{}", model.id, method.id()), run };
@@ -203,14 +233,13 @@ async fn experiment(app: Arc<App>, req: RunRequest, models: Vec<Model>) {
                 let model = model.clone();
                 let task = task.clone();
                 let expected = expected.clone();
-                handles.push(tokio::spawn(async move {
-                    solve_cell(&app, cell, model, method, task, expected).await
-                }));
+                cells.spawn(async move { solve_cell(&app, cell, model, method, task, expected).await });
             }
         }
-        for handle in handles {
-            if let Ok(result) = handle.await {
-                results.push(result);
+        while let Some(joined) = cells.join_next().await {
+            match joined {
+                Ok(result) => results.push(result),
+                Err(err) => eprintln!("ячейка прогона {run} упала: {err}"),
             }
         }
     }
@@ -251,45 +280,57 @@ async fn solve_cell(
         error: None,
     };
 
-    match outcome {
-        Ok(outcome) => {
-            result.answer = tasks::extract_answer(outcome.final_content());
-            match &expected {
-                Some(expected) => {
-                    result.correct = Some(tasks::matches(&result.answer, expected));
-                    result.source = "эталон";
-                }
-                None => {
-                    cell.emit(json!({ "type": "judging" }));
-                    // Судит основная модель: она сильнее второй, а слабый
-                    // судья хуже предвзятого (nano забраковал верные ответы
-                    // на задаче про сестёр Алисы). Своё рассуждение судья
-                    // не видит — только задачу и итог.
-                    let judge = &app.models[0];
-                    result.correct = methods::judge(&app.client, judge, &task, &result.answer).await;
-                    result.source = "судья";
-                }
-            }
-            result.sections = outcome.sections;
-            result.completion_tokens = outcome.completion_tokens;
-            result.reasoning_tokens = outcome.reasoning_tokens;
-            result.calls = outcome.calls;
-            cell.emit(json!({
-                "type": "cell_done",
-                "answer": result.answer,
-                "correct": result.correct,
-                "source": result.source,
-                "ms": ms,
-                "completion_tokens": result.completion_tokens,
-                "reasoning_tokens": result.reasoning_tokens,
-                "calls": result.calls,
-            }));
-        }
+    let outcome = match outcome {
+        Ok(outcome) => outcome,
         Err(error) => {
             cell.emit(json!({ "type": "cell_error", "error": error, "ms": ms }));
             result.error = Some(error);
+            return result;
+        }
+    };
+
+    result.answer = tasks::extract_answer(outcome.final_content());
+    result.sections = outcome.sections;
+    result.completion_tokens = outcome.completion_tokens;
+    result.reasoning_tokens = outcome.reasoning_tokens;
+    result.calls = outcome.calls;
+
+    match &expected {
+        Some(expected) => {
+            result.correct = Some(tasks::matches(&result.answer, expected));
+            result.source = "эталон";
+        }
+        None => {
+            cell.emit(json!({ "type": "judging" }));
+            // Судит основная модель: она сильнее второй, а слабый судья
+            // хуже предвзятого (nano забраковал верные ответы на задаче
+            // про сестёр Алисы). Судья видит только задачу и итог.
+            match methods::judge(&app.client, &app.models[0], &task, &result.answer).await {
+                Ok(verdict) => {
+                    result.correct = verdict;
+                    result.source = "судья";
+                }
+                // Сбой судьи — ошибка ячейки, а не «не смог решить»: иначе
+                // таблица точности молчит о том, что судья лежал.
+                Err(error) => {
+                    cell.emit(json!({ "type": "cell_error", "error": error, "ms": ms }));
+                    result.error = Some(error);
+                    return result;
+                }
+            }
         }
     }
+
+    cell.emit(json!({
+        "type": "cell_done",
+        "answer": result.answer,
+        "correct": result.correct,
+        "source": result.source,
+        "ms": ms,
+        "completion_tokens": result.completion_tokens,
+        "reasoning_tokens": result.reasoning_tokens,
+        "calls": result.calls,
+    }));
     result
 }
 
@@ -297,10 +338,12 @@ fn summarize(models: &[Model], results: &[CellResult]) -> Vec<Value> {
     let mut rows = Vec::new();
     for model in models {
         for method in Method::ALL {
-            let cells: Vec<&CellResult> = results
+            let mine: Vec<&CellResult> = results
                 .iter()
-                .filter(|r| r.model.id == model.id && r.method == method && r.error.is_none())
+                .filter(|r| r.model.id == model.id && r.method == method)
                 .collect();
+            let errors = mine.iter().filter(|r| r.error.is_some()).count();
+            let cells: Vec<&&CellResult> = mine.iter().filter(|r| r.error.is_none()).collect();
             let judged = cells.iter().filter(|r| r.correct.is_some()).count();
             let correct = cells.iter().filter(|r| r.correct == Some(true)).count();
             let n = cells.len().max(1) as u128;
@@ -311,7 +354,7 @@ fn summarize(models: &[Model], results: &[CellResult]) -> Vec<Value> {
                 "method_id": method.id(),
                 "correct": correct,
                 "judged": judged,
-                "errors": results.iter().filter(|r| r.model.id == model.id && r.method == method && r.error.is_some()).count(),
+                "errors": errors,
                 "avg_ms": cells.iter().map(|r| r.ms).sum::<u128>() / n,
                 "avg_tokens": cells.iter().map(|r| r.completion_tokens as u128).sum::<u128>() / n,
                 "avg_reasoning": cells.iter().map(|r| r.reasoning_tokens as u128).sum::<u128>() / n,
@@ -324,19 +367,13 @@ fn summarize(models: &[Model], results: &[CellResult]) -> Vec<Value> {
 mod report {
     //! REPORT.md: то, что остаётся после эксперимента, — сводка и все ответы.
 
-    use super::{CellResult, Model, RunRequest};
+    use super::{CellResult, Model, RunRequest, REPORT_PATH};
+    use crate::tasks;
     use serde_json::Value;
 
     pub fn write(req: &RunRequest, models: &[Model], results: &[CellResult], summary: &[Value]) -> String {
-        let path = "REPORT.md";
         let mut out = String::new();
-        let stamp = std::process::Command::new("date")
-            .arg("+%Y-%m-%d %H:%M")
-            .output()
-            .ok()
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-            .unwrap_or_default();
-        out.push_str(&format!("# w1d3 — отчёт {stamp}\n\n"));
+        out.push_str(&format!("# w1d3 — отчёт {}\n\n", tasks::utc_stamp()));
         let mode = if req.mode == "bench" {
             format!("бенчмарк (`{}`)", if req.kind.is_empty() { "random" } else { &req.kind })
         } else {
@@ -381,7 +418,8 @@ mod report {
             ));
             if let Some(error) = &r.error {
                 out.push_str(&format!("```\n{error}\n```\n\n"));
-            } else {
+            }
+            if !r.answer.is_empty() {
                 out.push_str(&format!("Извлечённый ответ: `{}`\n\n", r.answer));
             }
             for (name, text) in &r.sections {
@@ -389,9 +427,9 @@ mod report {
             }
         }
 
-        if let Err(err) = std::fs::write(path, &out) {
-            eprintln!("не удалось записать {path}: {err}");
+        if let Err(err) = std::fs::write(REPORT_PATH, &out) {
+            eprintln!("не удалось записать {REPORT_PATH}: {err}");
         }
-        path.to_string()
+        REPORT_PATH.to_string()
     }
 }

@@ -173,16 +173,20 @@ const JUDGE: &str = "Ты — проверяющий. Тебе дана зада
 {\"verdict\": \"correct\" | \"incorrect\" | \"unknown\", \"reason\": \"кратко почему\"}.";
 
 /// Судья для задач без эталона: слепая оценка, судья видит только задачу и
-/// итоговый ответ, не зная, каким способом тот получен. Возвращает None,
-/// если судья не смог решить.
-pub async fn judge(client: &Client, model: &Model, task: &str, answer: &str) -> Option<bool> {
+/// итоговый ответ, не зная, каким способом тот получен. `Ok(None)` — судья
+/// честно не смог решить; сбой вызова или нечитаемый вердикт — `Err`.
+pub async fn judge(client: &Client, model: &Model, task: &str, answer: &str) -> Result<Option<bool>, String> {
     let request = format!("Задача:\n{task}\n\nПроверяемый итоговый ответ: {answer}\n\nВерни JSON.");
     let messages = vec![llm::system(JUDGE), llm::user(&request)];
-    let reply = llm::stream(client, model, messages, true, |_, _| {}).await.ok()?;
-    let parsed: Value = serde_json::from_str(&reply.content).ok()?;
-    match parsed["verdict"].as_str()? {
-        "correct" => Some(true),
-        "incorrect" => Some(false),
-        _ => None,
+    let reply = llm::stream(client, model, messages, true, |_, _| {})
+        .await
+        .map_err(|e| format!("судья: {e}"))?;
+    let parsed: Value = serde_json::from_str(&reply.content)
+        .map_err(|e| format!("судья вернул не JSON ({e}): {}", reply.content.chars().take(200).collect::<String>()))?;
+    match parsed["verdict"].as_str() {
+        Some("correct") => Ok(Some(true)),
+        Some("incorrect") => Ok(Some(false)),
+        Some("unknown") => Ok(None),
+        other => Err(format!("судья вернул неизвестный вердикт: {other:?}")),
     }
 }

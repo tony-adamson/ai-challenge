@@ -1,4 +1,4 @@
 # Свой вывод программы не должен тонуть в служебных строках cargo
-# ("Finished dev profile…", "Running target/debug/w1d2").
+# ("Finished dev profile…", "Running target/debug/w1d3").
 [term]
 quiet = true
