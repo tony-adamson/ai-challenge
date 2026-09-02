@@ -125,6 +125,7 @@ pub async fn stream(
     }
 
     let mut answer = Answer { content: String::new(), completion_tokens: 0, reasoning_tokens: 0 };
+    let mut finish_reason: Option<String> = None;
     let mut buf: Vec<u8> = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(describe)? {
         buf.extend_from_slice(&chunk);
@@ -139,6 +140,9 @@ pub async fn stream(
             let Ok(event) = serde_json::from_str::<Value>(data) else { continue };
             if let Some(err) = event.get("error") {
                 return Err(format!("API вернул ошибку в потоке: {}", truncate(&err.to_string(), 500)));
+            }
+            if let Some(reason) = event["choices"][0]["finish_reason"].as_str() {
+                finish_reason = Some(reason.to_string());
             }
             let delta = &event["choices"][0]["delta"];
             if let Some(text) = delta["content"].as_str() {
@@ -163,6 +167,19 @@ pub async fn stream(
         }
     }
 
+    // Обрыв по лимиту провайдера — ошибка, а не «неверный ответ»: иначе
+    // усечённый текст без строки «ОТВЕТ:» портит таблицу точности.
+    match finish_reason.as_deref() {
+        Some("stop") | None => {}
+        Some("length") => {
+            return Err(format!(
+                "ответ оборван лимитом выходных токенов провайдера (finish_reason=length, \
+                 рассуждение {} токенов)",
+                answer.reasoning_tokens
+            ))
+        }
+        Some(other) => return Err(format!("ответ не завершён: finish_reason={other}")),
+    }
     if answer.content.trim().is_empty() {
         return Err("модель вернула пустой ответ".to_string());
     }
@@ -190,7 +207,7 @@ fn describe(err: reqwest::Error) -> String {
     format!("{cause}: {detail}")
 }
 
-fn truncate(text: &str, limit: usize) -> String {
+pub(crate) fn truncate(text: &str, limit: usize) -> String {
     if text.chars().count() <= limit {
         return text.to_string();
     }

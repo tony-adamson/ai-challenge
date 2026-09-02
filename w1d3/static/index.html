@@ -124,7 +124,6 @@
 const $ = (id) => document.getElementById(id);
 let config = { models: [], methods: [], kinds: [] };
 const cells = {};   // id -> { body, foot, dots, sections: {name: text}, order: [] }
-let totalRuns = 0;
 
 const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 const render = (text) => (window.marked ? marked.parse(text) : '<pre>' + escapeHtml(text) + '</pre>');
@@ -154,7 +153,7 @@ function syncMode() {
 function buildBoard() {
   const board = $('board'); board.innerHTML = '';
   for (const m of config.models) {
-    const title = document.createElement('div'); title.className = 'row-title'; title.textContent = m.label; board.append(title);
+    const title = document.createElement('div'); title.className = 'row-title'; title.textContent = m.label; title.dataset.model = m.id; board.append(title);
     const grid = document.createElement('div'); grid.className = 'grid'; board.append(grid);
     for (const method of config.methods) {
       const id = `${m.id}-${method.id}`;
@@ -190,7 +189,9 @@ function paint(cell) {
 function schedule(cell) {
   if (cell.dirty) return;
   cell.dirty = true;
-  requestAnimationFrame(() => paint(cell));
+  // Перерисовка не чаще 10 раз в секунду: marked парсит всю секцию целиком,
+  // и на восьми карточках покадровый парсинг ест ядро.
+  setTimeout(() => paint(cell), 100);
 }
 
 function setDot(cell, run, cls) {
@@ -203,7 +204,6 @@ function handle(ev) {
   const cell = cells[ev.cell];
   switch (ev.type) {
     case 'run_start':
-      totalRuns = ev.total;
       $('taskbar').style.display = 'grid';
       $('task-text').textContent = `Прогон ${ev.run}/${ev.total} · ${ev.task}`;
       $('task-meta').textContent = ev.expected == null ? 'эталона нет — оценивает судья' : `эталон: ${ev.expected}`;
@@ -236,7 +236,8 @@ function handle(ev) {
       break;
     case 'summary': showSummary(ev.rows); break;
     case 'finished':
-      $('status').textContent = `готово · отчёт: ${ev.report}`;
+      if (ev.error) { $('status').textContent = `готово, но ${ev.error}`; $('status').className = 'err'; }
+      else $('status').textContent = `готово · отчёт: ${ev.report}`;
       finishRun();
       break;
     case 'stopped':
@@ -291,7 +292,7 @@ $('form').addEventListener('submit', async (e) => {
   $('summary').style.display = 'none';
   for (const c of Object.values(cells)) c.dots.innerHTML = '';
   document.querySelectorAll('#board .card').forEach((card) => card.style.display = req.models.includes(card.dataset.model) ? '' : 'none');
-  document.querySelectorAll('#board .row-title').forEach((t, i) => t.style.display = req.models.includes(config.models[i].id) ? '' : 'none');
+  document.querySelectorAll('#board .row-title').forEach((t) => t.style.display = req.models.includes(t.dataset.model) ? '' : 'none');
 });
 
 $('stop').addEventListener('click', async () => {

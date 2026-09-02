@@ -75,7 +75,7 @@ async fn start() -> Result<(), String> {
         println!("  ✓ модель: {}", model.label);
     }
     if models.len() == 1 {
-        println!("  · вторая модель не подключена: нет OPENROUTER_API_KEY");
+        println!("  · вторая модель не подключена: нет OPENROUTER_API_KEY или она совпадает с основной");
     }
 
     let (tx, _) = broadcast::channel(1 << 16);
@@ -233,7 +233,10 @@ async fn experiment(app: Arc<App>, req: RunRequest, models: Vec<Model>) {
                 let model = model.clone();
                 let task = task.clone();
                 let expected = expected.clone();
-                cells.spawn(async move { solve_cell(&app, cell, model, method, task, expected).await });
+                // Судит первая из выбранных моделей: невыбранная может быть
+                // выключена как раз потому, что недоступна.
+                let judge = models[0].clone();
+                cells.spawn(async move { solve_cell(&app, cell, model, method, task, expected, judge).await });
             }
         }
         while let Some(joined) = cells.join_next().await {
@@ -245,9 +248,12 @@ async fn experiment(app: Arc<App>, req: RunRequest, models: Vec<Model>) {
     }
 
     let summary = summarize(&models, &results);
-    let report = report::write(&req, &models, &results, &summary);
     let _ = app.tx.send(json!({ "type": "summary", "rows": summary }).to_string());
-    let _ = app.tx.send(json!({ "type": "finished", "report": report }).to_string());
+    let finished = match report::write(&req, &models, &results, &summary) {
+        Ok(path) => json!({ "type": "finished", "report": path }),
+        Err(error) => json!({ "type": "finished", "error": error }),
+    };
+    let _ = app.tx.send(finished.to_string());
 }
 
 async fn solve_cell(
@@ -257,6 +263,7 @@ async fn solve_cell(
     method: Method,
     task: String,
     expected: Option<String>,
+    judge: Model,
 ) -> CellResult {
     cell.emit(json!({ "type": "cell_start" }));
     let started = Instant::now();
@@ -280,20 +287,14 @@ async fn solve_cell(
         error: None,
     };
 
-    let outcome = match outcome {
-        Ok(outcome) => outcome,
-        Err(error) => {
-            cell.emit(json!({ "type": "cell_error", "error": error, "ms": ms }));
-            result.error = Some(error);
-            return result;
-        }
-    };
-
-    result.answer = tasks::extract_answer(outcome.final_content());
     result.sections = outcome.sections;
     result.completion_tokens = outcome.completion_tokens;
     result.reasoning_tokens = outcome.reasoning_tokens;
     result.calls = outcome.calls;
+    if let Some(error) = outcome.error {
+        return fail(&cell, result, error, ms);
+    }
+    result.answer = tasks::extract_answer(result.sections.last().map(|(_, text)| text.as_str()).unwrap_or(""));
 
     match &expected {
         Some(expected) => {
@@ -305,18 +306,14 @@ async fn solve_cell(
             // Судит основная модель: она сильнее второй, а слабый судья
             // хуже предвзятого (nano забраковал верные ответы на задаче
             // про сестёр Алисы). Судья видит только задачу и итог.
-            match methods::judge(&app.client, &app.models[0], &task, &result.answer).await {
+            match methods::judge(&app.client, &judge, &task, &result.answer).await {
                 Ok(verdict) => {
                     result.correct = verdict;
                     result.source = "судья";
                 }
                 // Сбой судьи — ошибка ячейки, а не «не смог решить»: иначе
                 // таблица точности молчит о том, что судья лежал.
-                Err(error) => {
-                    cell.emit(json!({ "type": "cell_error", "error": error, "ms": ms }));
-                    result.error = Some(error);
-                    return result;
-                }
+                Err(error) => return fail(&cell, result, error, ms),
             }
         }
     }
@@ -331,6 +328,12 @@ async fn solve_cell(
         "reasoning_tokens": result.reasoning_tokens,
         "calls": result.calls,
     }));
+    result
+}
+
+fn fail(cell: &Cell, mut result: CellResult, error: String, ms: u128) -> CellResult {
+    cell.emit(json!({ "type": "cell_error", "error": error, "ms": ms }));
+    result.error = Some(error);
     result
 }
 
@@ -371,7 +374,7 @@ mod report {
     use crate::tasks;
     use serde_json::Value;
 
-    pub fn write(req: &RunRequest, models: &[Model], results: &[CellResult], summary: &[Value]) -> String {
+    pub fn write(req: &RunRequest, models: &[Model], results: &[CellResult], summary: &[Value]) -> Result<String, String> {
         let mut out = String::new();
         out.push_str(&format!("# w1d3 — отчёт {}\n\n", tasks::utc_stamp()));
         let mode = if req.mode == "bench" {
@@ -427,9 +430,7 @@ mod report {
             }
         }
 
-        if let Err(err) = std::fs::write(REPORT_PATH, &out) {
-            eprintln!("не удалось записать {REPORT_PATH}: {err}");
-        }
-        REPORT_PATH.to_string()
+        std::fs::write(REPORT_PATH, &out).map_err(|err| format!("не удалось записать {REPORT_PATH}: {err}"))?;
+        Ok(REPORT_PATH.to_string())
     }
 }

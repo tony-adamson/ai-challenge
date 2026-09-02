@@ -87,17 +87,15 @@ impl Cell {
 pub struct Outcome {
     /// Секции карточки в порядке появления: (название, текст).
     pub sections: Vec<(String, String)>,
+    /// Сбой любого вызова. Секции, успевшие завершиться до него, остаются:
+    /// то, что стримилось на экран, попадает и в отчёт.
+    pub error: Option<String>,
     pub completion_tokens: u64,
     pub reasoning_tokens: u64,
     pub calls: u32,
 }
 
 impl Outcome {
-    /// Итоговый ответ способа — текст последней секции.
-    pub fn final_content(&self) -> &str {
-        self.sections.last().map(|(_, text)| text.as_str()).unwrap_or("")
-    }
-
     fn add(&mut self, name: &str, answer: Answer) {
         self.sections.push((name.to_string(), answer.content));
         self.completion_tokens += answer.completion_tokens;
@@ -117,14 +115,21 @@ async fn call(
     llm::stream(client, model, messages, false, |text, thinking| cell.token(section, text, thinking)).await
 }
 
-pub async fn run(
+pub async fn run(method: Method, client: &Client, model: &Model, task: &str, cell: &Cell) -> Outcome {
+    let mut outcome =
+        Outcome { sections: Vec::new(), error: None, completion_tokens: 0, reasoning_tokens: 0, calls: 0 };
+    outcome.error = attempt(method, client, model, task, cell, &mut outcome).await.err();
+    outcome
+}
+
+async fn attempt(
     method: Method,
     client: &Client,
     model: &Model,
     task: &str,
     cell: &Cell,
-) -> Result<Outcome, String> {
-    let mut outcome = Outcome { sections: Vec::new(), completion_tokens: 0, reasoning_tokens: 0, calls: 0 };
+    outcome: &mut Outcome,
+) -> Result<(), String> {
     let task_with_tail = format!("{task}{FORMAT_TAIL}");
 
     match method {
@@ -156,16 +161,25 @@ pub async fn run(
             // одна модель, играющая три роли в одном ответе.
             let (a, b, c) = tokio::join!(expert(EXPERTS[0]), expert(EXPERTS[1]), expert(EXPERTS[2]));
             let mut opinions = String::new();
-            for (name, answer) in [a?, b?, c?] {
-                opinions.push_str(&format!("\n\n### {name}\n{}", answer.content));
-                outcome.add(name, answer);
+            let mut failure = None;
+            for result in [a, b, c] {
+                match result {
+                    Ok((name, answer)) => {
+                        opinions.push_str(&format!("\n\n### {name}\n{}", answer.content));
+                        outcome.add(name, answer);
+                    }
+                    Err(error) => failure = Some(error),
+                }
+            }
+            if let Some(error) = failure {
+                return Err(error);
             }
             let request = format!("Задача:\n{task}\n\nРешения экспертов:{opinions}\n\nОпредели верный итог.{FORMAT_TAIL}");
             let verdict = call(client, model, cell, "Модератор", vec![llm::system(MODERATOR), llm::user(&request)]).await?;
             outcome.add("Модератор", verdict);
         }
     }
-    Ok(outcome)
+    Ok(())
 }
 
 const JUDGE: &str = "Ты — проверяющий. Тебе дана задача и итоговый ответ на неё. Реши задачу сам, \
@@ -181,9 +195,16 @@ pub async fn judge(client: &Client, model: &Model, task: &str, answer: &str) -> 
     let reply = llm::stream(client, model, messages, true, |_, _| {})
         .await
         .map_err(|e| format!("судья: {e}"))?;
-    let parsed: Value = serde_json::from_str(&reply.content)
-        .map_err(|e| format!("судья вернул не JSON ({e}): {}", reply.content.chars().take(200).collect::<String>()))?;
-    match parsed["verdict"].as_str() {
+    // Модели любят оборачивать JSON в ```-ограждение: берём от первой «{»
+    // до последней «}».
+    let body = match (reply.content.find('{'), reply.content.rfind('}')) {
+        (Some(start), Some(end)) if start < end => &reply.content[start..=end],
+        _ => reply.content.as_str(),
+    };
+    let parsed: Value = serde_json::from_str(body)
+        .map_err(|e| format!("судья вернул не JSON ({e}): {}", llm::truncate(&reply.content, 200)))?;
+    let verdict = parsed["verdict"].as_str().map(|v| v.trim().to_lowercase());
+    match verdict.as_deref() {
         Some("correct") => Ok(Some(true)),
         Some("incorrect") => Ok(Some(false)),
         Some("unknown") => Ok(None),

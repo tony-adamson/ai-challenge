@@ -98,16 +98,17 @@ pub fn generate(kind: &str, rng: &mut Rng) -> Task {
                 expected: count.to_string(),
             }
         }
-        _ => {
+        "digits" => {
             let a = rng.range(100, 999);
             let b = rng.range(100, 999);
             let sum: u32 = (a * b).to_string().chars().filter_map(|c| c.to_digit(10)).sum();
             Task {
-                kind: "digits",
+                kind,
                 text: format!("Чему равна сумма цифр числа {a} × {b}? Ответ — одно целое число."),
                 expected: sum.to_string(),
             }
         }
+        other => unreachable!("тип задачи {other} есть в KINDS, но не в generate"),
     }
 }
 
@@ -209,14 +210,28 @@ fn normalize(text: &str) -> String {
 }
 
 /// Числовой эталон сравнивается с первым числом в ответе (модели любят
-/// писать «14 235» или «14,235»), текстовый — по вхождению.
+/// писать «14 235» или «14,235»). Текстовый — по вхождению основы слова:
+/// «в среду» и «пятницу» засчитываются за «среда» и «пятница». Основа —
+/// слово без последней буквы, и только для слов от пяти букв, чтобы «да»
+/// не совпадало со всем подряд.
 pub fn matches(got: &str, expected: &str) -> bool {
     let expected = normalize(expected);
     let got = normalize(got);
     if let Ok(number) = expected.parse::<i64>() {
         return first_int(&got) == Some(number);
     }
-    got == expected || got.contains(&expected)
+    if got == expected {
+        return true;
+    }
+    let mut words = got.split(|c: char| !c.is_alphanumeric());
+    if expected.chars().count() >= 5 {
+        let mut chars = expected.chars();
+        chars.next_back();
+        let stem = chars.as_str();
+        words.any(|word| word.starts_with(stem))
+    } else {
+        words.any(|word| word == expected)
+    }
 }
 
 fn first_int(text: &str) -> Option<i64> {
@@ -271,5 +286,10 @@ mod tests {
         assert!(matches("ответ: 7 (семь)", "7"));
         assert!(!matches("17", "7"));
         assert!(matches("это была среда", "среда"));
+        assert!(matches("в среду", "среда"));
+        assert!(matches("пятницу", "пятница"));
+        assert!(!matches("четверг", "среда"));
+        assert!(!matches("да", "нет"));
+        assert!(!matches("данные", "да"));
     }
 }
