@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>w1d4 — температура</title>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel-2: #1e222b; --line: #2a2f3a;
+    --text: #e6e8ee; --muted: #8b93a7; --accent: #7aa2f7; --ok: #4ade80; --bad: #f87171; --warn: #fbbf24;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, "Segoe UI", Inter, sans-serif; }
+  header { display: flex; align-items: baseline; gap: 14px; padding: 18px 28px 10px; }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header .sub { color: var(--muted); }
+  main { padding: 0 28px 40px; display: grid; gap: 18px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+  form { display: grid; grid-template-columns: 3fr 1fr; gap: 12px 24px; align-items: start; }
+  form .full { grid-column: 1 / -1; }
+  label.field { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+  input[type=text], input[type=number], select, textarea {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; width: 100%;
+  }
+  textarea { min-height: 76px; resize: vertical; }
+  button { background: var(--accent); color: #0b1020; border: 0; border-radius: 6px; padding: 9px 18px; font: inherit; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  .actions { display: flex; gap: 14px; align-items: center; }
+  #status { color: var(--muted); }
+  #status.err { color: var(--bad); }
+  .hint { color: var(--muted); font-size: 12px; }
+  .choices { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; padding-top: 4px; }
+  .choices label { display: flex; gap: 6px; align-items: center; cursor: pointer; color: var(--text); font-size: 14px; }
+  #board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+  .column { display: grid; gap: 10px; align-content: start; }
+  .col-head { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 2px; }
+  .col-head b { font-size: 16px; }
+  .col-head .col-stats { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; max-height: 42vh; }
+  .card-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); display: inline-block; }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.done { background: var(--muted); } .dot.live { background: var(--accent); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .card-body { padding: 8px 12px; overflow: auto; flex: 1; font-size: 13px; min-height: 48px; }
+  .card-body p { margin: 4px 0; } .card-body pre { white-space: pre-wrap; background: var(--panel-2); padding: 6px 8px; border-radius: 6px; }
+  .card-foot { padding: 6px 12px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+  .card-foot .mark.ok { color: var(--ok); } .card-foot .mark.bad { color: var(--bad); }
+  .card.error { border-color: var(--bad); }
+  #taskbar { display: none; }
+  #taskbar .meta { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  table.summary { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  table.summary th, table.summary td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+  table.summary th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  table.summary td.num { font-family: var(--mono); }
+  .bar { display: inline-block; height: 8px; background: var(--accent); border-radius: 4px; vertical-align: middle; margin-right: 8px; }
+  #summary { display: none; }
+  .row-title { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 8px; }
+</style>
+</head>
+<body>
+<header><h1>w1d4 — температура</h1><span class="sub" id="model"></span></header>
+<main>
+  <section class="panel">
+    <form id="form">
+      <label class="field">Запрос
+        <select id="preset"></select>
+      </label>
+      <label class="field">Повторов на температуру
+        <input type="number" id="runs" value="5" min="1" max="10">
+      </label>
+      <label class="field">Текст запроса (можно править)
+        <textarea id="prompt"></textarea>
+      </label>
+      <label class="field">Эталон (если есть)
+        <input type="text" id="expected" placeholder="пусто — оцениваешь сам">
+        <span class="hint">Ответ считается верным, если содержит эталон как подстроку.</span>
+      </label>
+      <div class="field full"><span>Модель</span><div class="choices" id="models"></div></div>
+      <div class="actions full">
+        <button type="submit" id="go">Запустить</button>
+        <button type="button" id="stop" hidden>Остановить</button>
+        <span id="status"></span>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel" id="taskbar">
+    <div id="task-text"></div>
+    <div class="meta" id="task-meta"></div>
+  </section>
+
+  <section id="board"></section>
+
+  <section class="panel" id="summary">
+    <div class="row-title">Сводка</div>
+    <table class="summary">
+      <thead><tr><th>Температура</th><th>Верно</th><th>Уникальных</th><th>Разнообразие</th><th>Средняя длина</th><th>Среднее время</th><th>Токены</th><th>Ошибок</th></tr></thead>
+      <tbody id="summary-body"></tbody>
+    </table>
+    <p class="hint">Разнообразие = 1 − среднее попарное пересечение множеств слов между повторами (0% — одни и те же слова, 100% — ни одного общего). Уникальных — сколько дословно разных ответов среди повторов.</p>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let config = { models: [], temperatures: [], presets: [] };
+const cells = {};    // "0.7-3" -> { card, body, mark, stats, dot, text, dirty }
+const columns = {};  // "0.7" -> { list, stats }
+const CUSTOM = '__custom__';
+
+const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const render = (text) => (window.marked ? marked.parse(text) : '<pre>' + escapeHtml(text) + '</pre>');
+
+async function init() {
+  try {
+    const res = await fetch('/config');
+    if (!res.ok) throw new Error(`/config: ${res.status}`);
+    config = await res.json();
+  } catch (e) {
+    $('status').textContent = `сервер не отвечает: ${e.message}`; $('status').className = 'err';
+    return;
+  }
+  $('model').textContent = 'встроенное рассуждение выключено у всех моделей';
+  config.models.forEach((m, i) => {
+    const l = document.createElement('label');
+    l.innerHTML = `<input type="radio" name="model" value="${m.id}" ${i === 0 ? 'checked' : ''}> ${m.label}` +
+      (m.max_temperature < 1.2 ? ` <span class="hint">(temperature не выше ${m.max_temperature.toFixed(1)})</span>` : '');
+    $('models').append(l);
+  });
+  document.querySelectorAll('input[name=model]').forEach((r) => r.addEventListener('change', () => buildBoard(Number($('runs').value))));
+  for (const p of config.presets) {
+    const o = document.createElement('option'); o.value = p.id; o.textContent = p.label; $('preset').append(o);
+  }
+  const o = document.createElement('option'); o.value = CUSTOM; o.textContent = 'Свой запрос'; $('preset').append(o);
+  $('preset').addEventListener('change', applyPreset);
+  applyPreset();
+  buildBoard(Number($('runs').value));
+  listen();
+}
+
+function applyPreset() {
+  const p = config.presets.find((p) => p.id === $('preset').value);
+  $('prompt').value = p ? p.prompt : '';
+  $('expected').value = p ? p.expected : '';
+}
+
+const selectedModel = () => config.models.find((m) => m.id === document.querySelector('input[name=model]:checked')?.value) || config.models[0];
+// «1.2 → 1.0», если провайдер выше не пускает: колонка остаётся, но честно подписана.
+const tLabel = (t) => { const m = selectedModel(); return m && t > m.max_temperature ? `${t} → ${m.max_temperature.toFixed(1)}` : `${t}`; };
+
+function buildBoard(runs) {
+  const board = $('board'); board.innerHTML = '';
+  for (const key in cells) delete cells[key];
+  for (const t of config.temperatures) {
+    const col = document.createElement('div'); col.className = 'column';
+    col.innerHTML = `<div class="col-head"><b>temperature = ${tLabel(t)}</b><span class="col-stats"></span></div>`;
+    board.append(col);
+    columns[t] = { stats: col.querySelector('.col-stats') };
+    for (let run = 1; run <= runs; run++) {
+      const card = document.createElement('div'); card.className = 'card';
+      card.innerHTML = `<div class="card-head"><span>повтор ${run}</span><span class="dot"></span></div>
+        <div class="card-body"><span class="hint">ожидание…</span></div>
+        <div class="card-foot"><span class="mark"></span><span class="stats"></span></div>`;
+      col.append(card);
+      cells[`${t}-${run}`] = { card, body: card.querySelector('.card-body'), mark: card.querySelector('.mark'),
+        stats: card.querySelector('.stats'), dot: card.querySelector('.dot'), text: '', dirty: false };
+    }
+  }
+}
+
+// Markdown перерисовывается не на каждый токен, а раз в кадр.
+function schedule(cell) {
+  if (cell.dirty) return;
+  cell.dirty = true;
+  requestAnimationFrame(() => { cell.dirty = false; cell.body.innerHTML = render(cell.text); cell.body.scrollTop = cell.body.scrollHeight; });
+}
+
+function handle(ev) {
+  const cell = cells[ev.cell];
+  switch (ev.type) {
+    case 'run_start':
+      $('taskbar').style.display = 'block';
+      $('task-text').textContent = ev.prompt;
+      $('task-meta').textContent = `${ev.model} · ` + (ev.expected ? `эталон: ${ev.expected}` : 'эталона нет — оценка на операторе');
+      $('status').textContent = `идёт: ${config.temperatures.length} × ${ev.runs} запросов`;
+      break;
+    case 'cell_start': cell.dot.className = 'dot live'; break;
+    case 'token': cell.text += ev.text; schedule(cell); break;
+    case 'cell_done': {
+      const cls = ev.correct === true ? 'ok' : ev.correct === false ? 'bad' : 'done';
+      cell.dot.className = 'dot ' + cls;
+      cell.mark.className = 'mark ' + cls;
+      cell.mark.textContent = ev.correct === true ? '✓ верно' : ev.correct === false ? '✗ неверно' : '';
+      cell.stats.textContent = `${(ev.ms / 1000).toFixed(1)} с · ${ev.tokens} ткн · ${ev.chars} симв.`;
+      break;
+    }
+    case 'cell_error':
+      cell.dot.className = 'dot bad'; cell.card.classList.add('error');
+      cell.mark.className = 'mark bad'; cell.mark.textContent = '⚠ ' + ev.error;
+      break;
+    case 'summary': showSummary(ev.rows); break;
+    case 'finished':
+      if (ev.error) { $('status').textContent = `готово, но ${ev.error}`; $('status').className = 'err'; }
+      else $('status').textContent = `готово · отчёт: ${ev.report}`;
+      finishRun();
+      break;
+    case 'stopped':
+      $('status').textContent = 'остановлено · отчёт не записан';
+      for (const c of Object.values(cells)) if (c.dot.classList.contains('live')) c.dot.className = 'dot';
+      finishRun();
+      break;
+    case 'lagged':
+      $('status').textContent = `поток отстал, пропущено событий: ${ev.count}`;
+      $('status').className = 'err';
+      break;
+  }
+}
+
+function finishRun() {
+  $('go').disabled = false;
+  $('stop').hidden = true;
+}
+
+function showSummary(rows) {
+  $('summary').style.display = 'block';
+  const body = $('summary-body'); body.innerHTML = '';
+  for (const r of rows) {
+    const pct = Math.round(r.diversity * 100);
+    const correct = r.correct == null ? '—' : `${r.correct}/${r.answers}`;
+    columns[r.temperature].stats.textContent = `разнообразие ${pct}% · уникальных ${r.distinct}/${r.answers}` + (r.correct == null ? '' : ` · верно ${correct}`);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="num">${tLabel(r.temperature)}</td><td class="num">${correct}</td><td class="num">${r.distinct}/${r.answers}</td>
+      <td class="num"><span class="bar" style="width:${pct}px"></span>${pct}%</td>
+      <td class="num">${r.avg_chars} симв.</td><td class="num">${(r.avg_ms / 1000).toFixed(1)} с</td><td class="num">${r.avg_tokens}</td><td class="num">${r.errors}</td>`;
+    body.append(tr);
+  }
+}
+
+function listen() {
+  const source = new EventSource('/events');
+  let wasDown = false;
+  source.onmessage = (e) => handle(JSON.parse(e.data));
+  source.onerror = () => { wasDown = true; $('status').textContent = 'связь с сервером потеряна'; $('status').className = 'err'; };
+  // EventSource переподключается сам, но события за время разрыва не
+  // доиграются: если среди них было finished, кнопка осталась бы заблокированной.
+  source.onopen = () => {
+    if (!wasDown) return;
+    wasDown = false;
+    $('status').textContent = 'связь восстановлена · события за время разрыва потеряны, итог смотри в REPORT.md';
+    finishRun();
+  };
+}
+
+$('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const req = { prompt: $('prompt').value, expected: $('expected').value, runs: Number($('runs').value), model: selectedModel()?.id };
+  $('status').className = '';
+  const res = await fetch('/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req) });
+  if (!res.ok) { $('status').textContent = await res.text(); $('status').className = 'err'; return; }
+  $('go').disabled = true;
+  $('stop').hidden = false;
+  $('summary').style.display = 'none';
+  buildBoard(req.runs);
+  for (const c of Object.values(columns)) c.stats.textContent = '';
+});
+
+$('stop').addEventListener('click', async () => {
+  const res = await fetch('/stop', { method: 'POST' });
+  if (!res.ok) { $('status').textContent = await res.text(); }
+});
+
+init();
+</script>
+</body>
+</html>
