@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>w1d5 — слабая / средняя / сильная модель</title>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel-2: #1e222b; --line: #2a2f3a;
+    --text: #e6e8ee; --muted: #8b93a7; --accent: #7aa2f7; --ok: #4ade80; --bad: #f87171; --warn: #fbbf24;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, "Segoe UI", Inter, sans-serif; }
+  header { display: flex; align-items: baseline; gap: 14px; padding: 18px 24px 10px; }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  main { padding: 0 24px 40px; display: grid; gap: 18px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+  form { display: grid; grid-template-columns: 3fr 1fr; gap: 12px 24px; align-items: start; }
+  form .full { grid-column: 1 / -1; }
+  label.field { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+  input[type=text], input[type=number], select, textarea {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; width: 100%;
+  }
+  textarea { min-height: 64px; resize: vertical; }
+  button { background: var(--accent); color: #0b1020; border: 0; border-radius: 6px; padding: 9px 18px; font: inherit; font-weight: 600; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); font-weight: 400; padding: 7px 12px; }
+  button:disabled { opacity: .5; cursor: default; }
+  .actions { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  #status { color: var(--muted); }
+  #status.err { color: var(--bad); }
+  .hint { color: var(--muted); font-size: 12px; }
+
+  /* Три колонки в ряд: первая строка — тройка одного вендора, вторая —
+     кросс-вендорная. Шесть в ряд читать невозможно. На узком экране
+     колонок становится меньше, но горизонтального скролла нет никогда. */
+  #board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 900px) { #board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 600px) { #board { grid-template-columns: minmax(0, 1fr); } }
+  .column { display: grid; gap: 8px; align-content: start; min-width: 0; }
+  .col-head { padding: 2px 2px 4px; border-bottom: 1px solid var(--line); }
+  .col-head b { font-size: 15px; display: block; overflow-wrap: anywhere; }
+  .col-head .tier { color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  .col-head .vendor { color: var(--muted); font-size: 11px; }
+  .col-head .col-stats { display: block; font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; display: flex; flex-direction: column; max-height: 42vh; min-width: 0; }
+  .card-head { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; border-bottom: 1px solid var(--line); font-size: 11px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); display: inline-block; }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.done { background: var(--muted); } .dot.live { background: var(--accent); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .card-body { padding: 8px 10px; overflow: auto; flex: 1; font-size: 13px; min-height: 44px; overflow-wrap: anywhere; }
+  .card-body p { margin: 3px 0; } .card-body pre { white-space: pre-wrap; background: var(--panel-2); padding: 5px 6px; border-radius: 6px; }
+  .card-foot { padding: 5px 10px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 11px; color: var(--muted); display: grid; gap: 2px; min-width: 0; }
+  .card-foot > * { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+  .card-foot .mark.ok { color: var(--ok); } .card-foot .mark.bad { color: var(--bad); }
+  .card-foot .note { color: var(--warn); }
+  .card.error { border-color: var(--bad); }
+
+  #taskbar { display: none; }
+  #taskbar .meta { color: var(--muted); font-family: var(--mono); font-size: 12px; margin-top: 6px; }
+  .scroll { overflow-x: auto; }
+  table.summary { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 13px; }
+  table.summary th, table.summary td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.summary th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  table.summary td.num { font-family: var(--mono); }
+  table.summary td.name { font-family: var(--mono); white-space: normal; }
+  #summary { display: none; }
+  .row-title { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>w1d5 — слабая / средняя / сильная модель</h1>
+  <span class="sub">OpenRouter · встроенное рассуждение выключено · temperature не отправляется</span>
+</header>
+<main>
+  <section class="panel">
+    <form id="form">
+      <label class="field">Запрос
+        <select id="preset"></select>
+      </label>
+      <label class="field">Повторов на модель
+        <input type="number" id="runs" value="3" min="1" max="10">
+      </label>
+      <label class="field">Текст запроса (можно править)
+        <textarea id="prompt"></textarea>
+      </label>
+      <label class="field">Эталон (если есть)
+        <input type="text" id="expected" placeholder="пусто — оцениваешь сам">
+        <span class="hint">Число сравнивается с первым числом ответа, слово — с любым окончанием, фраза — по вхождению.</span>
+      </label>
+      <div class="actions full">
+        <button type="submit" id="go">Запустить</button>
+        <button type="button" class="ghost" id="regen" hidden>Другая задача</button>
+        <button type="button" id="stop" hidden>Остановить</button>
+        <span id="status"></span>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel" id="taskbar">
+    <div id="task-text"></div>
+    <div class="meta" id="task-meta"></div>
+  </section>
+
+  <section id="board"></section>
+
+  <section class="panel" id="summary">
+    <div class="row-title">Сводка по моделям</div>
+    <div class="scroll">
+      <table class="summary">
+        <thead><tr>
+          <th>Модель</th><th>Класс</th><th>Верно</th><th>TTFT</th><th>Время</th>
+          <th>Токены in/out</th><th>Рассужд.</th><th>Ткн/с</th><th>Стоимость</th><th>Ошибок</th>
+        </tr></thead>
+        <tbody id="summary-body"></tbody>
+      </table>
+    </div>
+    <p class="hint">TTFT — среднее время до первого токена. Время — среднее полное время вызова.
+      Токены и ткн/с — средние по удачным повторам. Стоимость — сумма <code>usage.cost</code> за все
+      повторы модели, в долларах, как её считает сам OpenRouter.</p>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let config = { models: [], presets: [] };
+const cells = {};    // "m0-3" -> { card, body, mark, stats, dot, text, dirty }
+const columns = {};  // "m0"   -> { stats }
+const CUSTOM = '__custom__';
+
+const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const render = (text) => (window.marked ? marked.parse(text) : '<pre>' + escapeHtml(text) + '</pre>');
+// null в сводке — «ни одного удачного повтора»: показываем прочерк, иначе
+// полностью отказавшая модель выглядит самой быстрой и бесплатной.
+const dash = (v, f) => (v == null ? '—' : f(v));
+const money = (v) => dash(v, (x) => '$' + Number(x).toFixed(6));
+const secs = (ms) => dash(ms, (x) => (x / 1000).toFixed(1) + ' с');
+
+async function init() {
+  try {
+    const res = await fetch('/config');
+    if (!res.ok) throw new Error(`/config: ${res.status}`);
+    config = await res.json();
+  } catch (e) {
+    $('status').textContent = `сервер не отвечает: ${e.message}`; $('status').className = 'err';
+    return;
+  }
+  for (const p of config.presets) {
+    const o = document.createElement('option'); o.value = p.id; o.textContent = p.label; $('preset').append(o);
+  }
+  const o = document.createElement('option'); o.value = CUSTOM; o.textContent = 'Свой запрос'; $('preset').append(o);
+  $('preset').addEventListener('change', applyPreset);
+  $('regen').addEventListener('click', applyPreset);
+  $('runs').addEventListener('change', () => buildBoard(Number($('runs').value)));
+  await applyPreset();
+  buildBoard(Number($('runs').value));
+  listen();
+}
+
+// Задачи с эталоном генерирует сервер: числа свежие, эталон считает Rust.
+async function applyPreset() {
+  const p = config.presets.find((p) => p.id === $('preset').value);
+  $('regen').hidden = !(p && p.generated);
+  if (!p) { $('prompt').value = ''; $('expected').value = ''; return; }
+  if (!p.generated) { $('prompt').value = p.prompt; $('expected').value = p.expected; return; }
+  try {
+    const res = await fetch('/task?kind=' + encodeURIComponent(p.id));
+    if (!res.ok) throw new Error(`/task: ${res.status}`);
+    const task = await res.json();
+    $('prompt').value = task.prompt;
+    $('expected').value = task.expected;
+  } catch (e) {
+    $('status').textContent = `не удалось сгенерировать задачу: ${e.message}`; $('status').className = 'err';
+  }
+}
+
+function buildBoard(runs) {
+  const board = $('board'); board.innerHTML = '';
+  for (const key in cells) delete cells[key];
+  for (const m of config.models) {
+    const [vendor, short] = m.name.includes('/') ? [m.name.split('/')[0], m.name.split('/').slice(1).join('/')] : ['', m.name];
+    const col = document.createElement('div'); col.className = 'column';
+    col.innerHTML = `<div class="col-head"><span class="tier">${escapeHtml(m.tier)}</span>
+      <b>${escapeHtml(short)}</b><span class="vendor">${escapeHtml(vendor)}</span>
+      <span class="col-stats"></span></div>`;
+    board.append(col);
+    columns[m.id] = { stats: col.querySelector('.col-stats') };
+    for (let run = 1; run <= runs; run++) {
+      const card = document.createElement('div'); card.className = 'card';
+      card.innerHTML = `<div class="card-head"><span>повтор ${run}</span><span class="dot"></span></div>
+        <div class="card-body"><span class="hint">ожидание…</span></div>
+        <div class="card-foot"><span class="mark"></span><span class="stats"></span></div>`;
+      col.append(card);
+      cells[`${m.id}-${run}`] = { card, body: card.querySelector('.card-body'), mark: card.querySelector('.mark'),
+        stats: card.querySelector('.stats'), dot: card.querySelector('.dot'), text: '', dirty: false };
+    }
+  }
+}
+
+// Markdown перерисовывается не на каждый токен, а раз в кадр.
+function schedule(cell) {
+  if (cell.dirty) return;
+  cell.dirty = true;
+  requestAnimationFrame(() => { cell.dirty = false; cell.body.innerHTML = render(cell.text); cell.body.scrollTop = cell.body.scrollHeight; });
+}
+
+function handle(ev) {
+  const cell = cells[ev.cell];
+  switch (ev.type) {
+    case 'run_start':
+      $('taskbar').style.display = 'block';
+      $('task-text').textContent = ev.prompt;
+      $('task-meta').textContent = (ev.expected ? `эталон: ${ev.expected}` : 'эталона нет — оценка на операторе');
+      $('status').textContent = `идёт: ${config.models.length} моделей × ${ev.runs} повторов`;
+      break;
+    case 'cell_start': if (cell) cell.dot.className = 'dot live'; break;
+    case 'token': if (cell) { cell.text += ev.text; schedule(cell); } break;
+    case 'cell_done': {
+      if (!cell) break;
+      const cls = ev.correct === true ? 'ok' : ev.correct === false ? 'bad' : 'done';
+      cell.dot.className = 'dot ' + cls;
+      cell.mark.className = 'mark ' + cls;
+      cell.mark.textContent = ev.correct === true ? '✓ верно' : ev.correct === false ? '✗ неверно' : '';
+      cell.stats.innerHTML =
+        `<span>${secs(ev.ttft_ms)} → ${secs(ev.ms)} · ${ev.tps.toFixed(1)} ткн/с</span>` +
+        `<span>${ev.prompt_tokens}/${ev.completion_tokens} ткн` +
+        (ev.reasoning_tokens ? ` (+${ev.reasoning_tokens} рассужд.)` : '') + ` · ${money(ev.cost)}</span>` +
+        (ev.forced_reasoning ? '<span class="note">рассуждение обязательно — модель не даёт его выключить</span>' : '');
+      break;
+    }
+    case 'cell_error':
+      if (!cell) break;
+      cell.dot.className = 'dot bad'; cell.card.classList.add('error');
+      cell.mark.className = 'mark bad'; cell.mark.textContent = '⚠ ' + ev.error;
+      break;
+    case 'summary': showSummary(ev.rows); break;
+    case 'finished':
+      if (ev.error) { $('status').textContent = `готово, но ${ev.error}`; $('status').className = 'err'; }
+      else $('status').textContent = `готово · отчёт: ${ev.report}`;
+      finishRun();
+      break;
+    case 'stopped':
+      $('status').textContent = 'остановлено · отчёт не записан';
+      for (const c of Object.values(cells)) if (c.dot.classList.contains('live')) c.dot.className = 'dot';
+      finishRun();
+      break;
+    case 'lagged':
+      $('status').textContent = `поток отстал, пропущено событий: ${ev.count}`;
+      $('status').className = 'err';
+      break;
+  }
+}
+
+function finishRun() {
+  $('go').disabled = false;
+  $('stop').hidden = true;
+}
+
+function showSummary(rows) {
+  $('summary').style.display = 'block';
+  const body = $('summary-body'); body.innerHTML = '';
+  rows.forEach((r, i) => {
+    const model = config.models[i];
+    const correct = r.correct == null ? '—' : `${r.correct}/${r.answers}`;
+    if (model && columns[model.id]) {
+      columns[model.id].stats.textContent = r.answers === 0
+        ? `ни одного ответа · ошибок ${r.errors}`
+        : `${secs(r.avg_ms)} · ${dash(r.avg_tps, (v) => v.toFixed(1))} ткн/с · ${money(r.total_cost)}` +
+          (r.correct == null ? '' : ` · верно ${correct}`);
+    }
+    const tokens = r.avg_prompt_tokens == null ? '—'
+      : `${Math.round(r.avg_prompt_tokens)}/${Math.round(r.avg_completion_tokens)}`;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="name">${escapeHtml(r.model)}</td><td>${escapeHtml(r.tier)}</td>
+      <td class="num">${correct}</td><td class="num">${secs(r.avg_ttft_ms)}</td><td class="num">${secs(r.avg_ms)}</td>
+      <td class="num">${tokens}</td>
+      <td class="num">${dash(r.reasoning_tokens, (v) => v)}</td><td class="num">${dash(r.avg_tps, (v) => v.toFixed(1))}</td>
+      <td class="num">${money(r.total_cost)}</td><td class="num">${r.errors}</td>`;
+    body.append(tr);
+  });
+}
+
+function listen() {
+  const source = new EventSource('/events');
+  let wasDown = false;
+  source.onmessage = (e) => handle(JSON.parse(e.data));
+  source.onerror = () => { wasDown = true; $('status').textContent = 'связь с сервером потеряна'; $('status').className = 'err'; };
+  // EventSource переподключается сам, но события за время разрыва не
+  // доиграются: если среди них было finished, кнопка осталась бы заблокированной.
+  source.onopen = () => {
+    if (!wasDown) return;
+    wasDown = false;
+    $('status').textContent = 'связь восстановлена · события за время разрыва потеряны, итог смотри в REPORT.md';
+    finishRun();
+  };
+}
+
+$('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const req = { prompt: $('prompt').value, expected: $('expected').value, runs: Number($('runs').value) };
+  $('status').className = '';
+  const res = await fetch('/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req) });
+  if (!res.ok) { $('status').textContent = await res.text(); $('status').className = 'err'; return; }
+  $('go').disabled = true;
+  $('stop').hidden = false;
+  $('summary').style.display = 'none';
+  buildBoard(req.runs);
+});
+
+$('stop').addEventListener('click', async () => {
+  const res = await fetch('/stop', { method: 'POST' });
+  if (!res.ok) { $('status').textContent = await res.text(); }
+});
+
+init();
+</script>
+</body>
+</html>

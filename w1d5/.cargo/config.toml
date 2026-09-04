@@ -1,0 +1,4 @@
+# Свой вывод программы не должен тонуть в служебных строках cargo
+# ("Finished dev profile…", "Running target/debug/w1d5").
+[term]
+quiet = true
