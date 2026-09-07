@@ -32,9 +32,10 @@
   .provider .logo svg { height: 22px; width: auto; display: block; }
 
   /* ---------- Раскладка ---------- */
-  .main { flex: 1; display: grid; grid-template-columns: 1fr 320px; min-height: 0; }
+  .main { flex: 1; display: grid; grid-template-columns: 1fr 320px;
+    grid-template-rows: minmax(0, 1fr); min-height: 0; }
   .chat { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-  .msgs { flex: 1; overflow-y: auto; padding: var(--space-6); display: flex;
+  .msgs { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-6); display: flex;
     flex-direction: column; gap: var(--space-4); }
   .msgs-inner { max-width: 720px; width: 100%; margin: 0 auto; display: flex;
     flex-direction: column; gap: var(--space-4); }
@@ -149,7 +150,7 @@
 
   @media (max-width: 900px) {
     body { height: auto; overflow: auto; }
-    .main { grid-template-columns: 1fr; }
+    .main { grid-template-columns: 1fr; grid-template-rows: auto; }
     .panel { border-left: 0; border-top: var(--hairline); }
     .msgs { max-height: none; }
   }
