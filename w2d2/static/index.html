@@ -1,0 +1,1066 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Лаборатория</title>
+<link rel="stylesheet" href="/static/colors_and_type.css">
+<style>
+  /* Bro Agent: тот же Calm Intelligence, акцент — Soft Violet на элементах ИИ.
+     Sage остаётся нейтральным активным состоянием, бордеры вместо теней. */
+  :root { --accent: var(--violet); --accent-soft: #F2EEFC; --accent-line: #E6E1FB; }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  button, input, select, textarea { font-family: var(--font-sans); }
+
+  /* ---------- Шапка ---------- */
+  .top {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--space-6);
+    padding: var(--space-4) var(--space-6);
+    border-bottom: var(--hairline); background: var(--surface);
+  }
+  .brand { display: flex; align-items: center; gap: var(--space-3); }
+  .brand .av { width: 36px; height: 36px; border-radius: 12px; background: var(--accent);
+    color: var(--fg-on-brand); display: flex; align-items: center; justify-content: center; }
+  .brand .n { font: 650 18px/22px var(--font-sans); letter-spacing: -0.02em; color: var(--fg-strong); }
+  .brand .s { font: 400 12px/16px var(--font-sans); color: var(--fg-subtle); }
+  .top-right { display: flex; align-items: center; gap: var(--space-3); }
+  .icon-btn { flex: none; border: 0; background: transparent; color: var(--fg-muted);
+    cursor: pointer; padding: 6px; border-radius: var(--r-sm); display: flex;
+    align-items: center; justify-content: center;
+    transition: background var(--dur-2) var(--ease-standard), color var(--dur-2) var(--ease-standard); }
+  .icon-btn:hover { background: var(--surface-mist); }
+  .icon-btn.on { color: var(--brand); }
+  .provider { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .provider .k { font: var(--fw-medium) var(--t-caption-size)/var(--t-caption-lh) var(--font-sans);
+    letter-spacing: var(--t-caption-tr); text-transform: uppercase; color: var(--fg-subtle); }
+  .provider .logo { color: var(--fg-muted); display: flex; min-height: 22px; }
+  .provider .logo svg { height: 22px; width: auto; display: block; }
+
+  /* ---------- Раскладка ---------- */
+  .main { flex: 1; display: grid; grid-template-columns: 240px 1fr 320px;
+    grid-template-areas: "side chat panel"; grid-template-rows: minmax(0, 1fr); min-height: 0; }
+  /* Свёрнутая колонка убирается из потока целиком: нулевая ширина без
+     display:none оставила бы висеть её бордер. */
+  .main.no-side { grid-template-columns: 0 1fr 320px; }
+  .main.no-panel { grid-template-columns: 240px 1fr 0; }
+  .main.no-side.no-panel { grid-template-columns: 0 1fr 0; }
+  .main.no-side > .sidebar, .main.no-panel > .panel { display: none; }
+  .chat { grid-area: chat; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .msgs { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-6); display: flex;
+    flex-direction: column; gap: var(--space-4); }
+  .msgs-inner { max-width: 720px; width: 100%; margin: 0 auto; display: flex;
+    flex-direction: column; gap: var(--space-4); }
+
+  /* ---------- Список чатов ---------- */
+  .sidebar { grid-area: side; border-right: var(--hairline); background: var(--surface);
+    display: flex; flex-direction: column; min-height: 0; min-width: 0;
+    padding: var(--space-4); gap: var(--space-3); }
+  .chats { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+  .chat-item { position: relative; display: flex; align-items: center; gap: 4px; min-width: 0;
+    border-radius: var(--r-sm); padding: 8px 6px 8px 10px; cursor: pointer;
+    transition: background var(--dur-2) var(--ease-standard); }
+  .chat-item:hover { background: var(--surface-mist); }
+  .chat-item.on { background: var(--surface-mist); }
+  .chat-item.on::before { content: ""; position: absolute; left: 0; top: 6px; bottom: 6px;
+    width: 3px; border-radius: 0 2px 2px 0; background: var(--accent); }
+  .ci-main { flex: 1; min-width: 0; }
+  .ci-title { font: 500 13px/18px var(--font-sans); color: var(--fg-strong);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ci-title.blank { font-style: italic; font-weight: 400; color: var(--fg-subtle); }
+  .ci-sub { font: 400 11px/15px var(--font-sans); color: var(--fg-subtle);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ci-del { flex: none; border: 0; background: transparent; color: var(--fg-subtle);
+    cursor: pointer; padding: 4px 5px; border-radius: 4px; opacity: 0;
+    font: 500 11px/14px var(--font-sans); display: flex; align-items: center; }
+  .chat-item:hover .ci-del, .ci-del.armed { opacity: 1; }
+  .ci-del:hover, .ci-del.armed { color: var(--danger); background: var(--danger-bg); }
+  .no-chats { font: 400 12px/18px var(--font-sans); color: var(--fg-subtle); padding: 4px 2px; }
+  /* Пока идёт ответ, список не трогаем: переключение чата посреди стрима
+     оставило бы дельты без адресата. */
+  body.locked .sidebar { pointer-events: none; opacity: 0.5; }
+
+  /* ---------- Сообщения ---------- */
+  .turn { display: flex; gap: var(--space-3); }
+  .turn.me { justify-content: flex-end; }
+  .turn .av { flex: none; width: 32px; height: 32px; border-radius: var(--r-sm);
+    background: var(--accent); color: var(--fg-on-brand);
+    display: flex; align-items: center; justify-content: center; }
+  .body { min-width: 0; max-width: 82%; display: flex; flex-direction: column; gap: var(--space-2); }
+  .msg { padding: 12px 14px; font: 400 15px/23px var(--font-sans); overflow-wrap: anywhere; }
+  /* Ответ бота — размеченный markdown; свои сообщения и ошибки остаются текстом. */
+  .msg.s-me, .msg.err { white-space: pre-wrap; }
+  .msg.s-bot { background: var(--surface); border: var(--hairline);
+    border-radius: 18px 18px 18px 4px; color: var(--fg); }
+  .msg.s-me { background: var(--accent); color: var(--fg-on-brand);
+    border-radius: 18px 18px 4px 18px; }
+  .msg.err { background: var(--danger-bg); border-color: var(--danger); color: var(--danger); }
+  .msg code, .msg pre { font-family: var(--font-mono); font-size: 0.9em; }
+  .md > :first-child { margin-top: 0; }
+  .md > :last-child { margin-bottom: 0; }
+  .md p { margin: 0 0 8px; }
+  .md ul, .md ol { margin: 8px 0; padding-left: 20px; }
+  .md li { margin: 2px 0; }
+  .md h4 { margin: 12px 0 6px; font: 600 15px/22px var(--font-sans); color: var(--fg-strong); }
+  .md strong { font-weight: 600; }
+  .md hr { border: 0; border-top: var(--hairline); margin: 12px 0; }
+  .md code { background: var(--surface-alt); padding: 1px 4px; border-radius: 4px; }
+  .md pre { margin: 8px 0; padding: 10px 12px; background: var(--surface-alt);
+    border: var(--hairline); border-radius: var(--r-sm);
+    white-space: pre; overflow-x: auto; }
+  .md pre code { background: none; padding: 0; }
+
+  .reasoning { border: var(--hairline); border-radius: var(--r-sm); background: var(--surface-alt); }
+  .reasoning > summary { list-style: none; cursor: pointer; padding: 8px 12px;
+    font: 500 12px/16px var(--font-sans); color: var(--fg-subtle); }
+  .reasoning > summary::-webkit-details-marker { display: none; }
+  .reasoning > summary::before { content: "›"; display: inline-block; width: 12px;
+    transition: transform var(--dur-2) var(--ease-standard); }
+  .reasoning[open] > summary::before { transform: rotate(90deg); }
+  .reasoning .r-text { padding: 0 12px 10px; font: 400 13px/20px var(--font-sans);
+    color: var(--fg-subtle); white-space: pre-wrap; overflow-wrap: anywhere;
+    max-height: 260px; overflow-y: auto; }
+
+  .meta { font: 400 12px/16px var(--font-sans); color: var(--fg-subtle);
+    font-variant-numeric: tabular-nums; }
+
+  .caret { display: none; width: 7px; height: 15px; margin-left: 2px; vertical-align: -2px;
+    background: var(--accent); animation: blink 1s steps(1) infinite; }
+  .streaming .caret { display: inline-block; }
+  @keyframes blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .caret { animation: none; } }
+
+  .empty { margin: auto; text-align: center; color: var(--fg-subtle);
+    font: 400 15px/23px var(--font-sans); max-width: 380px; }
+
+  /* ---------- Композер ---------- */
+  .composer-wrap { border-top: var(--hairline); background: var(--surface); padding: var(--space-4) var(--space-6); }
+  .composer { max-width: 720px; margin: 0 auto; display: flex; align-items: flex-end; gap: var(--space-2);
+    background: var(--bg); border: var(--hairline); border-radius: var(--r-lg); padding: 6px 6px 6px 16px; }
+  .composer:focus-within { border-color: var(--accent); }
+  .composer textarea { flex: 1; border: 0; outline: 0; resize: none; background: transparent;
+    font: 400 15px/23px var(--font-sans); color: var(--fg); padding: 10px 0; max-height: 180px; }
+  .composer textarea::placeholder { color: var(--fg-disabled); }
+  .send { flex: none; width: 40px; height: 40px; border: 0; border-radius: var(--r-full);
+    background: var(--accent); color: var(--fg-on-brand); display: flex; align-items: center;
+    justify-content: center; cursor: pointer; transition: background var(--dur-2) var(--ease-standard); }
+  .send:disabled { background: var(--fg-disabled); cursor: default; }
+  .hint { max-width: 720px; margin: var(--space-2) auto 0; font: 400 12px/16px var(--font-sans);
+    color: var(--fg-subtle); }
+
+  /* ---------- Панель ---------- */
+  .panel { grid-area: panel; border-left: var(--hairline); background: var(--surface); overflow-y: auto;
+    min-height: 0; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-5); }
+  .panel-head { display: flex; align-items: baseline; justify-content: space-between; }
+  .panel-head h2 { font: 650 18px/24px var(--font-sans); letter-spacing: -0.02em; }
+  .saved { font: 500 12px/16px var(--font-sans); color: var(--success); opacity: 0;
+    transition: opacity var(--dur-2) var(--ease-standard); }
+  .saved.on { opacity: 1; }
+  .saved.bad { color: var(--danger); }
+
+  .field { display: flex; flex-direction: column; gap: var(--space-2); }
+  .field > label { font: var(--fw-medium) var(--t-caption-size)/var(--t-caption-lh) var(--font-sans);
+    letter-spacing: var(--t-caption-tr); text-transform: uppercase; color: var(--fg-subtle); }
+  .field .note { font: 400 12px/16px var(--font-sans); color: var(--fg-subtle); }
+  select {
+    width: 100%; border: var(--hairline); border-radius: var(--r-sm); background: var(--bg);
+    color: var(--fg); font: 400 14px/20px var(--font-sans); padding: 9px 11px; outline: 0;
+  }
+  select:focus { border-color: var(--accent); }
+
+  .row { display: flex; align-items: center; gap: var(--space-3); }
+  input[type=range] { flex: 1; accent-color: var(--accent); }
+  .value { font: 600 14px/20px var(--font-sans); color: var(--fg-strong);
+    font-variant-numeric: tabular-nums; min-width: 30px; text-align: right; }
+
+  .btn { border: var(--hairline); border-radius: var(--r-sm); background: var(--bg);
+    color: var(--fg-strong); font: 500 13px/18px var(--font-sans); padding: 9px 12px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+    transition: background var(--dur-2) var(--ease-standard); }
+  .btn:hover { background: var(--surface-mist); }
+  .btn.wide { width: 100%; }
+  .btn.accent { background: var(--accent); border-color: transparent; color: var(--fg-on-brand); }
+  .btn.accent:hover { background: var(--accent); filter: brightness(1.08); }
+  /* Иконка и подпись стоят по центру кнопки: явная ширина и одинаковые
+     поля, иначе flex центрует содержимое внутри случайной ширины. */
+  .btn svg { flex: none; }
+  #new-chat { width: 100%; text-align: center; padding-left: var(--space-3); padding-right: var(--space-3); }
+
+  /* ---------- Окно системного промпта ---------- */
+  .scrim { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center;
+    justify-content: center; padding: var(--space-6);
+    background: rgba(247, 244, 237, 0.6); backdrop-filter: blur(5px); }
+  .scrim[hidden] { display: none; }
+  .dialog { width: min(760px, 100%); display: flex; flex-direction: column; gap: var(--space-4);
+    background: var(--surface); border: var(--hairline); border-radius: var(--r-lg);
+    box-shadow: var(--shadow-lg); padding: var(--space-6); }
+  .dialog h3 { margin: 0; font: 600 20px/28px var(--font-sans); letter-spacing: -0.01em;
+    color: var(--fg-strong); }
+  .dialog textarea { width: 100%; height: 50vh; resize: vertical;
+    border: var(--hairline); border-radius: var(--r-sm); background: var(--bg); color: var(--fg);
+    font: 400 14px/21px var(--font-sans); padding: 12px 14px; outline: 0; }
+  .dialog textarea:focus { border-color: var(--accent); }
+  .dialog .actions { display: flex; align-items: center; gap: var(--space-2); }
+  .dialog .actions .gap { flex: 1; }
+
+  .session { border: var(--hairline); border-radius: var(--r-md); background: var(--bg); }
+  .session .r { display: flex; justify-content: space-between; gap: var(--space-3);
+    padding: 10px 12px; border-bottom: var(--hairline);
+    font: 400 13px/18px var(--font-sans); color: var(--fg-muted); }
+  .session .r:last-child { border-bottom: 0; }
+  .session .r b { font-weight: 600; color: var(--fg-strong); font-variant-numeric: tabular-nums; }
+
+  /* Узко — список чатов ложится полосой над чатом. */
+  @media (max-width: 1100px) {
+    .main { grid-template-columns: 1fr 320px; grid-template-areas: "side side" "chat panel";
+      grid-template-rows: auto minmax(0, 1fr); }
+    .main.no-side { grid-template-columns: 1fr 320px; }
+    .main.no-panel, .main.no-side.no-panel { grid-template-columns: 1fr 0; }
+    .sidebar { flex-direction: row; align-items: center; gap: var(--space-2);
+      border-right: 0; border-bottom: var(--hairline); padding: var(--space-3) var(--space-4); }
+    .sidebar .btn { flex: none; white-space: nowrap; }
+    .chats { flex-direction: row; overflow-x: auto; overflow-y: hidden; gap: 6px; }
+    .chat-item { flex: none; width: 180px; }
+    .no-chats { white-space: nowrap; }
+  }
+  @media (max-width: 900px) {
+    body { height: auto; overflow: auto; }
+    .main, .main.no-side, .main.no-panel, .main.no-side.no-panel {
+      grid-template-columns: 1fr; grid-template-areas: "side" "chat" "panel";
+      grid-template-rows: auto; }
+    .panel { border-left: 0; border-top: var(--hairline); }
+    .msgs { max-height: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <button class="icon-btn" id="toggle-sidebar" title="Список чатов">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>
+      </svg>
+    </button>
+    <div class="av">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>
+      </svg>
+    </div>
+    <div>
+      <div class="n">Лаборатория</div>
+      <div class="s">учебная среда: роботы, микросхемы, ИИ</div>
+    </div>
+  </div>
+  <div class="top-right">
+    <button class="icon-btn" id="toggle-panel" title="Панель агента">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 4H14"/><path d="M10 4H3"/><path d="M21 12H12"/><path d="M8 12H3"/>
+        <path d="M21 20H16"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/>
+      </svg>
+    </button>
+    <div class="provider">
+      <div class="k">Провайдер</div>
+      <div class="logo" id="logo"></div>
+    </div>
+  </div>
+</header>
+
+<div class="main">
+  <aside class="sidebar">
+    <button class="btn accent" id="new-chat">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 5v14"/><path d="M5 12h14"/>
+      </svg>
+      Новый чат
+    </button>
+    <div class="chats" id="chats"></div>
+  </aside>
+
+  <section class="chat">
+    <div class="msgs" id="msgs"><div class="msgs-inner" id="inner"></div></div>
+    <div class="composer-wrap">
+      <div class="composer">
+        <textarea id="input" rows="1" placeholder="Напиши сообщение"></textarea>
+        <button class="send" id="send" title="Отправить">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>
+          </svg>
+        </button>
+      </div>
+      <div class="hint">Enter — отправить, Shift+Enter — перенос строки</div>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <div class="panel-head">
+      <h2>Агент</h2>
+      <span class="saved" id="saved">сохранено</span>
+    </div>
+
+    <div class="field">
+      <label for="provider">Провайдер</label>
+      <select id="provider"></select>
+      <div class="note" id="provider-note"></div>
+    </div>
+
+    <div class="field">
+      <label for="model">Модель</label>
+      <select id="model"></select>
+      <div class="note" id="model-note"></div>
+    </div>
+
+    <div class="field">
+      <label for="temp">Температура</label>
+      <div class="row">
+        <input type="range" id="temp" min="0" max="2" step="0.1">
+        <span class="value" id="temp-v">0.7</span>
+      </div>
+      <div class="note">0 — предсказуемо, 2 — свободно</div>
+    </div>
+
+    <div class="field">
+      <label for="effort">Рассуждение</label>
+      <select id="effort"></select>
+      <div class="note">Рассуждение считается как токены ответа и оплачивается по цене выхода</div>
+    </div>
+
+    <div class="field">
+      <label for="persona">Личность</label>
+      <select id="persona"></select>
+      <button class="btn wide" id="open-prompt">Системный промпт…</button>
+      <div class="note">Выбор личности подставляет её базовый промпт в этот чат</div>
+    </div>
+
+    <div class="field">
+      <label>Чат</label>
+      <div class="session">
+        <div class="r"><span>Сообщений</span><b id="s-msgs">0</b></div>
+        <div class="r"><span>Токены на входе</span><b id="s-in">0</b></div>
+        <div class="r"><span>Токены на выходе</span><b id="s-out">0</b></div>
+        <div class="r"><span>Стоимость</span><b id="s-cost">—</b></div>
+      </div>
+      <div class="note">Токены и стоимость — за ответы, полученные на этой странице</div>
+    </div>
+  </aside>
+</div>
+
+<div class="scrim" id="prompt-modal" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="prompt-title">
+    <h3 id="prompt-title">Системный промпт</h3>
+    <textarea id="prompt"></textarea>
+    <div class="actions">
+      <button class="btn" id="reset-prompt">Вернуть базовый</button>
+      <div class="gap"></div>
+      <button class="btn" id="prompt-cancel">Отмена</button>
+      <button class="btn accent" id="prompt-save">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const inner = $('inner'), msgs = $('msgs'), input = $('input'), send = $('send');
+
+let providers = [];
+let personas = [];
+let chats = [];
+// Промпт открытого чата. Живёт в переменной, а не в textarea окна: окно
+// правит черновик, и «Отмена» должна оставлять настройки чата как были.
+let systemPrompt = '';
+let activeId = null;
+let busy = false;
+const logos = {};
+const session = { messages: 0, prompt: 0, completion: 0, cost: 0, priced: false };
+
+const BOT_GLYPH = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/>
+  <path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>`;
+
+const TRASH_GLYPH = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+  <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`;
+
+/* ---------- Markdown ---------- */
+// Модель отвечает markdown-ом. Разметку разбираем сами: текст сначала полностью
+// экранируется, дальше по нему ходит парсер — в DOM не попадает ни один символ
+// разметки от модели, только теги, которые собрали здесь.
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Инлайн-разметка внутри уже экранированной строки. Код прячем в плейсхолдеры,
+// чтобы ** и _ внутри `кода` остались символами.
+function inlineMd(s) {
+  const code = [];
+  s = s.replace(/`([^`]+)`/g, (_, c) => `\u0000${code.push(c) - 1}\u0000`);
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/(^|[^*])\*([^\s*][^*\n]*?[^\s*]|[^\s*])\*/g, '$1<em>$2</em>');
+  s = s.replace(/(^|[^\w_])_([^_\n]+)_(?![\w_])/g, '$1<em>$2</em>');
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${code[i]}</code>`);
+}
+
+function renderMarkdown(text) {
+  const lines = escapeHtml(String(text == null ? '' : text)).replace(/\r\n?/g, '\n').split('\n');
+  const out = [];
+  let para = [];
+  let list = null; // { tag, items }
+
+  const flushPara = () => {
+    if (para.length) out.push(`<p>${inlineMd(para.join('<br>'))}</p>`);
+    para = [];
+  };
+  const flushList = () => {
+    if (list) out.push(`<${list.tag}>` + list.items.map(i => `<li>${inlineMd(i)}</li>`).join('') + `</${list.tag}>`);
+    list = null;
+  };
+  const flush = () => { flushPara(); flushList(); };
+  const item = (tag, body) => {
+    flushPara();
+    if (list && list.tag !== tag) flushList();
+    if (!list) list = { tag, items: [] };
+    list.items.push(body);
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      flush();
+      const buf = [];
+      for (i++; i < lines.length && !/^\s*```/.test(lines[i]); i++) buf.push(lines[i]);
+      out.push(`<pre><code>${buf.join('\n')}</code></pre>`);
+      continue;
+    }
+    if (!line.trim()) { flush(); continue; }
+    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { flush(); out.push('<hr>'); continue; }
+
+    const head = line.match(/^\s*#{1,3}\s+(.+?)\s*#*$/);
+    if (head) { flush(); out.push(`<h4>${inlineMd(head[1])}</h4>`); continue; }
+
+    const bullet = line.match(/^\s*[-*•]\s+(.+)$/);
+    if (bullet) { item('ul', bullet[1]); continue; }
+
+    const numbered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (numbered) { item('ol', numbered[1]); continue; }
+
+    flushList();
+    para.push(line.trim());
+  }
+  flush();
+  return out.join('');
+}
+
+/* ---------- Отрисовка ленты ---------- */
+
+function showEmpty() {
+  const text = activeId
+    ? 'Чат пустой. Спроси что-нибудь — вопрос и ответ лягут на диск, и после перезапуска разговор продолжится с этого места.'
+    : 'Начни новый чат: напиши вопрос внизу или нажми «Новый чат» слева.';
+  inner.innerHTML = '';
+  const box = document.createElement('div');
+  box.className = 'empty';
+  box.textContent = text;
+  inner.append(box);
+}
+
+function userTurn(text) {
+  const turn = document.createElement('div');
+  turn.className = 'turn me';
+  const body = document.createElement('div');
+  body.className = 'body';
+  const msg = document.createElement('div');
+  msg.className = 'msg s-me';
+  msg.textContent = text;
+  body.append(msg);
+  turn.append(body);
+  return turn;
+}
+
+function botTurn() {
+  const turn = document.createElement('div');
+  turn.className = 'turn';
+  const av = document.createElement('div');
+  av.className = 'av';
+  av.innerHTML = BOT_GLYPH;
+  const body = document.createElement('div');
+  body.className = 'body';
+  const msg = document.createElement('div');
+  msg.className = 'msg s-bot';
+  const text = document.createElement('span');
+  text.className = 'md';
+  const caret = document.createElement('span');
+  caret.className = 'caret';
+  msg.append(text, caret);
+  body.append(msg);
+  turn.append(av, body);
+  return { turn, body, msg, text, caret };
+}
+
+// Ответ перерисовывается целиком на каждый delta: тексты короткие, а частичный
+// markdown иначе не собрать. Курсор переносим внутрь последнего блока, чтобы он
+// мигал в конце строки, а не под ней.
+function paintBot(bot, text) {
+  bot.text.innerHTML = renderMarkdown(text);
+  const last = bot.text.lastElementChild;
+  if (last && last.tagName !== 'PRE' && last.tagName !== 'HR') last.append(bot.caret);
+  else bot.msg.append(bot.caret);
+}
+
+function addReasoning(body, msg) {
+  const details = document.createElement('details');
+  details.className = 'reasoning';
+  details.open = true; // пока стримится — видно; после ответа свернём
+  const summary = document.createElement('summary');
+  summary.textContent = 'Рассуждение';
+  const text = document.createElement('div');
+  text.className = 'r-text';
+  details.append(summary, text);
+  body.insertBefore(details, msg);
+  return { details, summary, text };
+}
+
+function renderMessages(messages) {
+  if (!messages.length) { showEmpty(); return; }
+  inner.innerHTML = '';
+  for (const m of messages) {
+    if (m.role === 'user') {
+      inner.append(userTurn(m.content));
+    } else {
+      const bot = botTurn();
+      paintBot(bot, m.content);
+      inner.append(bot.turn);
+    }
+  }
+  scroll();
+}
+
+function atBottom() { return msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 80; }
+function scroll() { msgs.scrollTop = msgs.scrollHeight; }
+
+/* ---------- Метрики ---------- */
+
+const num = (v, digits = 0) => v.toLocaleString('ru-RU', { maximumFractionDigits: digits });
+
+function metricsLine(m) {
+  const parts = [];
+  parts.push(m.ttft_ms === null ? 'TTFT —' : `TTFT ${num(m.ttft_ms)} мс`);
+  parts.push(`${(m.total_ms / 1000).toFixed(1)} с`);
+  const reasoning = m.reasoning_tokens > 0 ? ` (+${num(m.reasoning_tokens)} рассужд.)` : '';
+  const cached = m.cached_prompt_tokens > 0 ? ` (${num(m.cached_prompt_tokens)} из кэша)` : '';
+  parts.push(`${num(m.prompt_tokens)}${cached} → ${num(m.completion_tokens)} ток.${reasoning}`);
+  parts.push(m.server_tok_s === null ? '— ток/с сервер' : `${num(m.server_tok_s)} ток/с сервер`);
+  parts.push(m.client_tok_s === null ? '— ток/с клиент' : `${num(m.client_tok_s)} ток/с клиент`);
+  parts.push(m.cost_usd === null ? '—' : '$' + m.cost_usd.toFixed(4));
+  if (m.finish_reason && m.finish_reason !== 'stop') parts.push('обрыв: ' + m.finish_reason);
+  return parts.join(' · ');
+}
+
+function countSession(m) {
+  session.prompt += m.prompt_tokens;
+  session.completion += m.completion_tokens;
+  if (m.cost_usd !== null) { session.cost += m.cost_usd; session.priced = true; }
+  renderSession();
+}
+
+// Токены и стоимость считаются за текущую страницу: во сколько чат обошёлся
+// за всю жизнь, в файле не записано, и выдумывать это число нечестно.
+function resetSession(messages) {
+  session.messages = messages;
+  session.prompt = 0; session.completion = 0; session.cost = 0; session.priced = false;
+  renderSession();
+}
+
+function renderSession() {
+  $('s-msgs').textContent = num(session.messages);
+  $('s-in').textContent = num(session.prompt);
+  $('s-out').textContent = num(session.completion);
+  $('s-cost').textContent = session.priced ? '$' + session.cost.toFixed(4) : '—';
+}
+
+/* ---------- Список чатов ---------- */
+
+function providerById(id) { return providers.find(p => p.id === id) || providers[0]; }
+
+function shortDate(iso) {
+  const d = new Date(iso);
+  return isNaN(d) ? '' : d.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+function renderChats() {
+  const box = $('chats');
+  box.innerHTML = '';
+  if (!chats.length) {
+    const hint = document.createElement('div');
+    hint.className = 'no-chats';
+    hint.textContent = 'Чатов пока нет';
+    box.append(hint);
+    return;
+  }
+  for (const c of chats) {
+    const item = document.createElement('div');
+    item.className = 'chat-item' + (c.id === activeId ? ' on' : '');
+    item.dataset.id = c.id;
+
+    const main = document.createElement('div');
+    main.className = 'ci-main';
+    const title = document.createElement('div');
+    title.className = 'ci-title' + (c.title ? '' : ' blank');
+    title.textContent = c.title || 'Новый чат';
+    const sub = document.createElement('div');
+    sub.className = 'ci-sub';
+    sub.textContent = `${providerById(c.provider).label} · ${c.model} · ${shortDate(c.updated_at)}`;
+    main.append(title, sub);
+
+    // Подтверждение живёт в самой кнопке: confirm() блокирует вкладку и
+    // выглядит чужеродно, а отдельный модал ради удаления чата — перебор.
+    const del = document.createElement('button');
+    del.className = 'ci-del';
+    del.title = 'Удалить чат';
+    del.innerHTML = TRASH_GLYPH;
+
+    item.append(main, del);
+    box.append(item);
+  }
+}
+
+let armed = null; // { id, timer }
+
+function disarm() {
+  if (!armed) return;
+  clearTimeout(armed.timer);
+  const btn = document.querySelector(`.chat-item[data-id="${armed.id}"] .ci-del`);
+  if (btn) { btn.classList.remove('armed'); btn.innerHTML = TRASH_GLYPH; }
+  armed = null;
+}
+
+$('chats').addEventListener('click', async (e) => {
+  const item = e.target.closest('.chat-item');
+  if (!item) return;
+  const id = item.dataset.id;
+  const del = e.target.closest('.ci-del');
+  if (!del) { disarm(); if (id !== activeId) await openChat(id); return; }
+
+  if (armed && armed.id === id) { disarm(); await deleteChat(id); return; }
+  disarm();
+  del.classList.add('armed');
+  del.textContent = 'Удалить?';
+  armed = { id, timer: setTimeout(disarm, 3000) };
+});
+
+/* ---------- Состояние ---------- */
+
+// Логотипы вставляются инлайном, а не через <img>: марки нарисованы
+// currentColor и должны брать цвет из токенов страницы.
+async function loadLogos() {
+  await Promise.all(['cerebras', 'deepseek'].map(async (id) => {
+    try { logos[id] = await (await fetch(`/static/${id}.svg`)).text(); } catch (e) { logos[id] = ''; }
+  }));
+}
+
+function setLogo(providerId) {
+  const p = providerById(providerId);
+  $('logo').innerHTML = logos[providerId] || '';
+  $('logo').title = p ? p.label : '';
+}
+
+async function refreshState() {
+  const state = await (await fetch('/api/state')).json();
+  providers = state.providers;
+  personas = state.personas;
+  chats = state.chats;
+  renderChats();
+  return state;
+}
+
+// Настройки для панели, когда открытого чата ещё нет.
+function fallbackSettings() {
+  const p = providers.find(x => x.available) || providers[0];
+  return {
+    provider: p.id,
+    model: p.models[0].id,
+    temperature: 0.7,
+    reasoning: p.reasoning_levels[0].value,
+    persona: personas[0].id,
+    system_prompt: personas[0].prompt,
+  };
+}
+
+function personaById(id) { return personas.find(p => p.id === id) || personas[0]; }
+
+function fillPersonas(id) {
+  $('persona').innerHTML = personas.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+  $('persona').value = personas.some(p => p.id === id) ? id : personas[0].id;
+}
+
+function fillProviders() {
+  $('provider').innerHTML = providers.map(p =>
+    `<option value="${p.id}"${p.available ? '' : ' disabled'}>${p.label}${p.available ? '' : ' — нет ключа'}</option>`
+  ).join('');
+}
+
+function fillModels(providerId, model) {
+  const p = providerById(providerId);
+  $('model').innerHTML = p.models.map(m => `<option value="${m.id}">${m.label}</option>`).join('');
+  $('model').value = p.models.some(m => m.id === model) ? model : p.models[0].id;
+}
+
+function fillReasoning(providerId, value) {
+  const p = providerById(providerId);
+  $('effort').innerHTML = p.reasoning_levels.map(r => `<option value="${r.value}">${r.label}</option>`).join('');
+  $('effort').value = p.reasoning_levels.some(r => r.value === value) ? value : p.reasoning_levels[0].value;
+}
+
+function renderNotes() {
+  const p = providerById($('provider').value);
+  $('provider-note').textContent = p.available ? '' : (p.reason || 'провайдер недоступен');
+
+  const model = p.models.find(m => m.id === $('model').value);
+  if (!model) { $('model-note').textContent = ''; return; }
+  const speed = model.tok_s_hint ? `~${num(model.tok_s_hint)} ток/с` : 'скорость не заявлена';
+  const price = model.price_in === null || model.price_out === null
+    ? 'цена —'
+    : `$${model.price_in} / $${model.price_out} за 1M ток.`;
+  $('model-note').textContent = `${speed} · ${price}`;
+}
+
+function applySettings(s) {
+  fillProviders();
+  $('provider').value = s.provider;
+  fillModels(s.provider, s.model);
+  fillReasoning(s.provider, s.reasoning);
+  $('temp').value = s.temperature;
+  $('temp-v').textContent = Number(s.temperature).toFixed(1);
+  fillPersonas(s.persona);
+  systemPrompt = s.system_prompt;
+  renderNotes();
+  setLogo(s.provider);
+}
+
+function currentSettings() {
+  return {
+    provider: $('provider').value,
+    model: $('model').value,
+    temperature: parseFloat($('temp').value),
+    reasoning: $('effort').value,
+    persona: $('persona').value,
+    system_prompt: systemPrompt,
+  };
+}
+
+function adoptChat(chat, applyPanel = true) {
+  activeId = chat.id;
+  if (applyPanel) applySettings(chat.settings);
+  else setLogo(chat.settings.provider);
+  resetSession(chat.messages.length);
+  renderMessages(chat.messages);
+  renderChats();
+}
+
+async function openChat(id) {
+  if (busy) return;
+  const res = await fetch(`/api/chats/${id}`);
+  if (!res.ok) { await refreshState(); return; }
+  adoptChat(await res.json());
+}
+
+// Чат создаётся лениво: пустая папка не должна плодить чаты, пока человек
+// ничего не написал и ничего не покрутил в панели.
+async function ensureChat(applyPanel = true) {
+  if (activeId) return activeId;
+  const res = await fetch('/api/chats', { method: 'POST' });
+  if (!res.ok) return null;
+  adoptChat(await res.json(), applyPanel);
+  await refreshState();
+  renderChats();
+  return activeId;
+}
+
+async function newChat() {
+  const res = await fetch('/api/chats', { method: 'POST' });
+  if (!res.ok) return;
+  adoptChat(await res.json());
+  await refreshState();
+  renderChats();
+  input.focus();
+}
+
+async function deleteChat(id) {
+  const res = await fetch(`/api/chats/${id}`, { method: 'DELETE' });
+  const next = res.ok ? (await res.json()).active_chat : null;
+  if (id === activeId) {
+    activeId = null;
+    if (next) {
+      await openChat(next);
+    } else {
+      resetSession(0);
+      applySettings(fallbackSettings());
+      renderMessages([]);
+    }
+  }
+  await refreshState();
+}
+
+/* ---------- Панель ---------- */
+
+let saveTimer = null;
+let debounceTimer = null;
+
+async function saveSettings() {
+  const settings = currentSettings();
+  const flag = $('saved');
+  // Настройки принадлежат чату, поэтому первый же поворот ручки его создаёт.
+  const id = await ensureChat(false);
+  if (!id) return;
+  try {
+    const res = await fetch(`/api/chats/${id}/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    const text = await res.text();
+    flag.textContent = res.ok ? 'сохранено' : text;
+    flag.classList.toggle('bad', !res.ok);
+  } catch (e) {
+    flag.textContent = 'не сохранено';
+    flag.classList.add('bad');
+  }
+  flag.classList.add('on');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => flag.classList.remove('on'), 1600);
+  setLogo(settings.provider);
+  await refreshState();
+}
+
+function saveSoon(delay) {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(saveSettings, delay);
+}
+
+/* ---------- Окно системного промпта ---------- */
+
+function openPrompt() {
+  const p = personaById($('persona').value);
+  $('prompt-title').textContent = `Системный промпт · ${p.name}`;
+  $('prompt').value = systemPrompt;
+  $('prompt-modal').hidden = false;
+  $('prompt').focus();
+}
+
+function closePrompt() { $('prompt-modal').hidden = true; }
+
+/* ---------- Свёрнутые колонки ---------- */
+
+// localStorage может быть недоступен (приватное окно, запрет на сайт) —
+// тогда колонки просто всегда открыты.
+function readFlag(key) {
+  try { return localStorage.getItem(key) !== '0'; } catch (e) { return true; }
+}
+
+function writeFlag(key, on) {
+  try { localStorage.setItem(key, on ? '1' : '0'); } catch (e) { /* не сохранили — и ладно */ }
+}
+
+const columns = { 'lab.sidebar': readFlag('lab.sidebar'), 'lab.panel': readFlag('lab.panel') };
+
+function applyColumns() {
+  const main = document.querySelector('.main');
+  main.classList.toggle('no-side', !columns['lab.sidebar']);
+  main.classList.toggle('no-panel', !columns['lab.panel']);
+  $('toggle-sidebar').classList.toggle('on', columns['lab.sidebar']);
+  $('toggle-panel').classList.toggle('on', columns['lab.panel']);
+}
+
+function toggleColumn(key) {
+  columns[key] = !columns[key];
+  writeFlag(key, columns[key]);
+  applyColumns();
+}
+
+/* ---------- Диалог ---------- */
+
+function lock(on) {
+  busy = on;
+  send.disabled = on;
+  document.body.classList.toggle('locked', on);
+}
+
+async function ask() {
+  const text = input.value.trim();
+  if (!text || busy) return;
+  lock(true);
+  const id = await ensureChat();
+  if (!id) { lock(false); return; }
+  input.value = '';
+  input.style.height = 'auto';
+
+  if (!session.messages) inner.innerHTML = '';
+  inner.append(userTurn(text));
+  session.messages += 1;
+  renderSession();
+
+  const bot = botTurn();
+  bot.msg.classList.add('streaming');
+  inner.append(bot.turn);
+  scroll();
+
+  let reasoning = null;
+  let answer = '';
+
+  const finish = () => {
+    bot.msg.classList.remove('streaming');
+    lock(false);
+    input.focus();
+    refreshState();
+  };
+
+  const fail = (message) => {
+    bot.msg.classList.add('err');
+    if (!answer) bot.text.textContent = message;
+    if (reasoning) reasoning.details.open = false;
+    finish();
+    scroll();
+  };
+
+  const handle = (name, data) => {
+    const stick = atBottom();
+    if (name === 'reasoning') {
+      if (!reasoning) reasoning = addReasoning(bot.body, bot.msg);
+      reasoning.text.textContent += data;
+      reasoning.text.scrollTop = reasoning.text.scrollHeight;
+    } else if (name === 'content') {
+      answer += data;
+      paintBot(bot, answer);
+    } else if (name === 'done') {
+      paintBot(bot, answer);
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = metricsLine(data);
+      bot.body.append(meta);
+      if (reasoning) {
+        reasoning.summary.textContent = `Рассуждение · ${num(data.reasoning_tokens)} токенов`;
+        reasoning.details.open = false;
+      }
+      session.messages += 1;
+      countSession(data);
+      finish();
+    } else if (name === 'title') {
+      // Тема приходит после done, одним событием на весь чат: правим список
+      // на месте, чтобы заголовок не ждал следующего /api/state.
+      const item = chats.find(c => c.id === id);
+      if (item) { item.title = data; renderChats(); }
+    } else if (name === 'error') {
+      // Вопрос без ответа агент из истории убрал — снимаем и со счётчика.
+      session.messages -= 1;
+      renderSession();
+      fail(data);
+    }
+    if (stick) scroll();
+  };
+
+  try {
+    const res = await fetch(`/api/chats/${id}/ask`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) { fail(`сервер ответил ${res.status}`); return; }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let cut;
+      while ((cut = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, cut);
+        buf = buf.slice(cut + 2);
+        let name = 'message', payload = null;
+        for (const line of block.split('\n')) {
+          if (line.startsWith('event:')) name = line.slice(6).trim();
+          else if (line.startsWith('data:')) payload = line.slice(5).trim();
+        }
+        if (payload !== null) handle(name, JSON.parse(payload));
+      }
+    }
+  } catch (e) {
+    fail('соединение с сервером прервалось: ' + e.message);
+    return;
+  }
+  if (busy) fail('поток оборвался без ответа');
+}
+
+/* ---------- Запуск ---------- */
+
+async function boot() {
+  applyColumns();
+  await loadLogos();
+  const state = await refreshState();
+  if (state.active_chat) {
+    await openChat(state.active_chat);
+  } else {
+    applySettings(fallbackSettings());
+    renderMessages([]);
+    resetSession(0);
+  }
+}
+
+$('new-chat').addEventListener('click', newChat);
+$('toggle-sidebar').addEventListener('click', () => toggleColumn('lab.sidebar'));
+$('toggle-panel').addEventListener('click', () => toggleColumn('lab.panel'));
+$('provider').addEventListener('change', () => {
+  // Модели и уровни рассуждения у провайдеров свои: значения от прежнего
+  // провайдера новому не подойдут, поэтому сбрасываем на первые.
+  const provider = $('provider').value;
+  fillModels(provider, null);
+  fillReasoning(provider, 'none');
+  renderNotes();
+  saveSettings();
+});
+$('model').addEventListener('change', () => { renderNotes(); saveSettings(); });
+$('effort').addEventListener('change', saveSettings);
+$('temp').addEventListener('input', () => {
+  $('temp-v').textContent = Number($('temp').value).toFixed(1);
+  saveSoon(400);
+});
+// Личность подставляет свой шаблон в промпт чата: правки прежнего чат
+// не наследует — иначе робототехник договаривал бы за схемотехника.
+$('persona').addEventListener('change', () => {
+  systemPrompt = personaById($('persona').value).prompt;
+  saveSettings();
+});
+$('open-prompt').addEventListener('click', openPrompt);
+$('prompt-cancel').addEventListener('click', closePrompt);
+$('reset-prompt').addEventListener('click', () => {
+  $('prompt').value = personaById($('persona').value).prompt;
+  $('prompt').focus();
+});
+$('prompt-save').addEventListener('click', () => {
+  systemPrompt = $('prompt').value;
+  closePrompt();
+  saveSettings();
+});
+$('prompt-modal').addEventListener('click', (e) => { if (e.target === $('prompt-modal')) closePrompt(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('prompt-modal').hidden) closePrompt();
+});
+
+send.addEventListener('click', ask);
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); }
+});
+input.addEventListener('input', () => {
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 180) + 'px';
+});
+
+boot().catch(e => { inner.textContent = 'Не удалось получить состояние агента: ' + e.message; });
+</script>
+</body>
+</html>
