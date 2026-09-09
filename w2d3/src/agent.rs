@@ -1,0 +1,1351 @@
+//! Агент: провайдеры, настройки, сборка запроса и разбор потока. Историю
+//! агент не хранит — она лежит в `Chat` (см. `store.rs`), агент её только
+//! читает и дописывает. Про HTTP-сервер здесь не знают: наружу торчат
+//! `Provider`, `Settings`, `Message`, `Metrics` и поток `Event`.
+
+use std::collections::{HashMap, HashSet};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use tokio::sync::mpsc;
+
+use crate::store::Chat;
+
+/// Потолок ответа для моделей, которых нет в справочнике. Свой потолок
+/// каждой модели лежит в `ModelInfo::max_tokens`: он входит в окно контекста
+/// наравне с промптом, и у маленькой модели его приходится ужимать.
+const DEFAULT_MAX_TOKENS: u32 = 4096;
+const TIMEOUT: Duration = Duration::from_secs(180);
+
+/// Личность чата: домен, в котором агент учит. Промпт — шаблон: при выборе
+/// личности он копируется в `Settings::system_prompt`, и дальше чат правит
+/// уже свою копию, а шаблон остаётся тем, к чему можно вернуться.
+pub struct Persona {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub prompt: &'static str,
+}
+
+/// Первая — личность нового чата.
+pub const PERSONAS: &[Persona] = &[
+    Persona {
+        id: "robotics",
+        name: "Робототехник",
+        prompt: r#"Ты — Робототехник, преподаватель учебной лаборатории.
+Учишь робототехнике: кинематика и динамика, датчики и приводы, ROS 2, управление и ПИД-регуляторы, встроенные контроллеры, безопасность железа.
+Объясняешь от простого к сложному: сначала идея на пальцах, потом формула или код.
+Говоришь на «ты», спокойно и по делу, без восклицательных знаков.
+Отвечаешь по-русски. Код и формулы оформляешь в markdown.
+Не выдумываешь: не уверен в цифре, модели датчика или сигнатуре API — говоришь, что не уверен.
+Про безопасность предупреждаешь до того, как человек подаст питание на железо.
+Когда уместно, предлагаешь маленькое упражнение минут на десять.
+В конце объяснения задаёшь один вопрос на понимание."#,
+    },
+    Persona {
+        id: "ml",
+        name: "ML-инженер",
+        prompt: r#"Ты — ML-инженер, преподаватель учебной лаборатории.
+Учишь машинному обучению: данные и разметка, классические методы и нейросети, обучение и переобучение, метрики и валидация, PyTorch, разбор ошибок экспериментов.
+Объясняешь от простого к сложному: сначала зачем это нужно, потом как считается.
+Говоришь на «ты», спокойно и по делу, без восклицательных знаков.
+Отвечаешь по-русски. Код и формулы оформляешь в markdown.
+Начинаешь с данных и метрики: без них разговор про модель бессмысленный.
+Не выдумываешь: не помнишь точное число из статьи или сигнатуру функции — говоришь, что не уверен.
+Когда уместно, предлагаешь маленький эксперимент, который человек прогонит сам.
+В конце объяснения задаёшь один вопрос на понимание."#,
+    },
+    Persona {
+        id: "ai",
+        name: "ИИ-инженер",
+        prompt: r#"Ты — ИИ-инженер, преподаватель учебной лаборатории.
+Учишь работе с большими языковыми моделями: как они устроены и где их границы, промпты, агенты и инструменты, RAG, оценка качества, стоимость и латентность, безопасность.
+Объясняешь от простого к сложному: сначала что происходит внутри, потом как это применить.
+Говоришь на «ты», спокойно и по делу, без восклицательных знаков.
+Отвечаешь по-русски. Код, промпты и схемы оформляешь в markdown.
+Про цену и задержку говоришь так же серьёзно, как про качество ответа.
+Не выдумываешь: не уверен в поведении конкретной модели или в цифрах прайса — говоришь, что не уверен.
+Когда уместно, предлагаешь маленькое упражнение: переписать промпт, померить, сравнить.
+В конце объяснения задаёшь один вопрос на понимание."#,
+    },
+    Persona {
+        id: "chips",
+        name: "Схемотехник",
+        prompt: r#"Ты — Схемотехник, преподаватель учебной лаборатории.
+Учишь проектированию микросхем: цифровая логика, Verilog и SystemVerilog, FPGA, маршрут ASIC от RTL через синтез к размещению и трассировке, тайминги, основы аналоговой схемотехники, чтение даташитов.
+Объясняешь от простого к сложному: сначала что делает схема, потом как описать её в коде.
+Говоришь на «ты», спокойно и по делу, без восклицательных знаков.
+Отвечаешь по-русски. Код и временные диаграммы оформляешь в markdown.
+Не выдумываешь: не уверен в параметре из даташита или в поведении конкретной ПЛИС — говоришь, что не уверен.
+Когда уместно, предлагаешь маленькое упражнение: описать модуль, посчитать задержку, прочитать страницу даташита.
+В конце объяснения задаёшь один вопрос на понимание."#,
+    },
+    Persona {
+        id: "free",
+        name: "Свободный",
+        prompt: r#"Ты — ассистент учебной лаборатории без своей узкой темы.
+Отвечаешь на любой вопрос коротко и по делу, роль на себя не берёшь.
+Объясняешь от простого к сложному: сначала суть в двух фразах, потом детали.
+Говоришь на «ты», спокойно, без восклицательных знаков.
+Отвечаешь по-русски. Код и формулы оформляешь в markdown.
+Не выдумываешь: не знаешь или не уверен — говоришь об этом прямо.
+Длинный ответ пишешь только там, где вопрос действительно требует разбора.
+Когда уместно, предлагаешь маленькое упражнение или следующий шаг.
+В конце объяснения задаёшь один вопрос на понимание, если он к месту."#,
+    },
+];
+
+/// Личность старых чатов, сохранённых до появления поля.
+const FALLBACK_PERSONA: &str = "free";
+
+pub fn persona(id: &str) -> Option<&'static Persona> {
+    PERSONAS.iter().find(|p| p.id == id)
+}
+
+pub struct ModelInfo {
+    pub id: &'static str,
+    pub label: &'static str,
+    /// Заявленная скорость генерации, токенов в секунду — ориентир из
+    /// документации провайдера, а не измерение. 0 — не заявлена.
+    pub tok_s_hint: u32,
+    /// Доллары за 1M токенов входа и выхода по прайсу провайдера.
+    /// `None` — цены на странице нет, считать стоимость не из чего.
+    pub price_in: Option<f64>,
+    pub price_out: Option<f64>,
+    /// Окно контекста: сколько токенов модель принимает за один запрос.
+    /// В него входит всё — системный промпт, вся история и потолок ответа.
+    pub context_window: u32,
+    /// Потолок ответа. Он режется от того же окна, поэтому у 4k-модели его
+    /// приходится держать маленьким: иначе промпт плюс потолок не влезают.
+    pub max_tokens: u32,
+}
+
+const CEREBRAS_MODELS: [ModelInfo; 3] = [
+    ModelInfo { id: "qwen-3.8-27b", label: "Qwen 3.8 27B", tok_s_hint: 1500, price_in: Some(0.99), price_out: Some(1.49), context_window: 65_536, max_tokens: 4096 },
+    ModelInfo { id: "gpt-oss-120b", label: "GPT-OSS 120B", tok_s_hint: 3000, price_in: Some(0.35), price_out: Some(0.75), context_window: 65_536, max_tokens: 4096 },
+    ModelInfo { id: "gemma-4-31b", label: "Gemma 4 31B", tok_s_hint: 0, price_in: None, price_out: None, context_window: 32_768, max_tokens: 4096 },
+];
+
+/// Цены DeepSeek — по прайсу вне пика (в часы скидки они ниже).
+const DEEPSEEK_MODELS: [ModelInfo; 2] = [
+    ModelInfo { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash", tok_s_hint: 0, price_in: Some(0.22), price_out: Some(0.66), context_window: 1_000_000, max_tokens: 4096 },
+    ModelInfo { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", tok_s_hint: 0, price_in: Some(0.66), price_out: Some(1.98), context_window: 1_000_000, max_tokens: 4096 },
+];
+
+/// Через OpenRouter взяты две заведомо тесные модели: на них переполнение
+/// контекста видно за пару сообщений, а не за час разговора. Цены здесь
+/// только для подсказки в панели — фактическую стоимость вызова OpenRouter
+/// присылает сам, в `usage.cost`.
+const OPENROUTER_MODELS: [ModelInfo; 2] = [
+    ModelInfo { id: "openai/gpt-3.5-turbo-0613", label: "GPT-3.5 Turbo 0613 · 4k", tok_s_hint: 0, price_in: Some(1.0), price_out: Some(2.0), context_window: 4095, max_tokens: 1024 },
+    ModelInfo { id: "gryphe/mythomax-l2-13b", label: "MythoMax 13B · 8k", tok_s_hint: 0, price_in: Some(0.06), price_out: Some(0.06), context_window: 8192, max_tokens: 2048 },
+];
+
+/// У Cerebras глубина рассуждения — `reasoning_effort`, у DeepSeek оно
+/// включено по умолчанию и гасится отдельным полем `thinking`. Наружу
+/// разница не торчит: и там и там уровень выбирается из этого списка.
+const CEREBRAS_REASONING: [(&str, &str); 4] =
+    [("none", "выключено"), ("low", "низкое"), ("medium", "среднее"), ("high", "высокое")];
+const DEEPSEEK_REASONING: [(&str, &str); 4] =
+    [("none", "выключено"), ("low", "низкое"), ("high", "высокое"), ("max", "максимум")];
+/// Обе модели OpenRouter рассуждать не умеют — уровень остаётся один.
+const OPENROUTER_REASONING: [(&str, &str); 1] = [("none", "выключено")];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Provider {
+    Cerebras,
+    DeepSeek,
+    OpenRouter,
+}
+
+impl Provider {
+    pub const ALL: [Provider; 3] = [Provider::Cerebras, Provider::DeepSeek, Provider::OpenRouter];
+
+    pub fn from_id(id: &str) -> Option<Provider> {
+        Provider::ALL.into_iter().find(|p| p.id() == id)
+    }
+
+    pub fn id(&self) -> &'static str {
+        match self {
+            Provider::Cerebras => "cerebras",
+            Provider::DeepSeek => "deepseek",
+            Provider::OpenRouter => "openrouter",
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Provider::Cerebras => "Cerebras",
+            Provider::DeepSeek => "DeepSeek",
+            Provider::OpenRouter => "OpenRouter",
+        }
+    }
+
+    pub fn base_url(&self) -> &'static str {
+        match self {
+            Provider::Cerebras => "https://api.cerebras.ai/v1/chat/completions",
+            Provider::DeepSeek => "https://api.deepseek.com/chat/completions",
+            Provider::OpenRouter => "https://openrouter.ai/api/v1/chat/completions",
+        }
+    }
+
+    pub fn key_env(&self) -> &'static str {
+        match self {
+            Provider::Cerebras => "CEREBRAS_API_KEY",
+            Provider::DeepSeek => "DEEPSEEK_API_KEY",
+            Provider::OpenRouter => "OPENROUTER_API_KEY",
+        }
+    }
+
+    pub fn models(&self) -> &'static [ModelInfo] {
+        match self {
+            Provider::Cerebras => &CEREBRAS_MODELS,
+            Provider::DeepSeek => &DEEPSEEK_MODELS,
+            Provider::OpenRouter => &OPENROUTER_MODELS,
+        }
+    }
+
+    pub fn reasoning_levels(&self) -> &'static [(&'static str, &'static str)] {
+        match self {
+            Provider::Cerebras => &CEREBRAS_REASONING,
+            Provider::DeepSeek => &DEEPSEEK_REASONING,
+            Provider::OpenRouter => &OPENROUTER_REASONING,
+        }
+    }
+
+    /// OpenRouter считает стоимость сам и присылает её в `usage.cost` —
+    /// прайс-лист под ним не нужен, а панель об этом честно предупреждает.
+    pub fn cost_from_api(&self) -> bool {
+        matches!(self, Provider::OpenRouter)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Settings {
+    /// `cerebras` | `deepseek` | `openrouter`.
+    pub provider: String,
+    pub model: String,
+    pub temperature: f64,
+    /// Уровень из `Provider::reasoning_levels`. У qwen-3.8-27b на стороне
+    /// Cerebras и у DeepSeek умолчание — рассуждать, поэтому уровень всегда
+    /// отправляется явно.
+    pub reasoning: String,
+    /// id из `PERSONAS`. Чаты, сохранённые до появления личностей, поля не
+    /// знают — им достаётся нейтральная: чужой домен навязывать нечестно.
+    #[serde(default = "fallback_persona")]
+    pub persona: String,
+    /// Текст промпта самого чата: копия шаблона личности, которую можно
+    /// править. Личность здесь только помечает, откуда копия взялась.
+    pub system_prompt: String,
+    /// Сжимать ли контекст силами OpenRouter. На моделях с окном ≤ 8k он по
+    /// умолчанию выбрасывает середину истории (middle-out), и переполнение
+    /// становится невидимым: `prompt_tokens` замирает, модель забывает
+    /// середину разговора. В Лаборатории это выключено — переполнение должно
+    /// приходить ошибкой; включить обратно можно ради демонстрации. Старые
+    /// чаты поля не знают, им достаётся `false`.
+    #[serde(default)]
+    pub router_compression: bool,
+}
+
+fn fallback_persona() -> String {
+    FALLBACK_PERSONA.to_string()
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            provider: Provider::Cerebras.id().to_string(),
+            model: CEREBRAS_MODELS[0].id.to_string(),
+            temperature: 0.7,
+            reasoning: "none".to_string(),
+            persona: PERSONAS[0].id.to_string(),
+            system_prompt: PERSONAS[0].prompt.to_string(),
+            router_compression: false,
+        }
+    }
+}
+
+impl Settings {
+    pub fn provider(&self) -> Result<Provider, String> {
+        Provider::from_id(&self.provider).ok_or(format!("неизвестный провайдер: {}", self.provider))
+    }
+
+    pub fn model_info(&self) -> Option<&'static ModelInfo> {
+        self.provider().ok()?.models().iter().find(|m| m.id == self.model)
+    }
+
+    /// Потолок ответа этой модели. Модели вне справочника быть не может
+    /// (`validate` её не пропустит), но выдумывать панику здесь незачем.
+    pub fn max_tokens(&self) -> u32 {
+        self.model_info().map_or(DEFAULT_MAX_TOKENS, |m| m.max_tokens)
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        let provider = self.provider()?;
+        if !provider.models().iter().any(|m| m.id == self.model) {
+            return Err(format!("у {} нет модели {}", provider.label(), self.model));
+        }
+        if !(0.0..=2.0).contains(&self.temperature) {
+            return Err("температура вне диапазона 0–2".to_string());
+        }
+        if !provider.reasoning_levels().iter().any(|(value, _)| *value == self.reasoning) {
+            return Err(format!("неизвестный режим рассуждения: {}", self.reasoning));
+        }
+        if persona(&self.persona).is_none() {
+            return Err(format!("неизвестная личность: {}", self.persona));
+        }
+        Ok(())
+    }
+}
+
+/// Реплика разговора. У ответа ассистента здесь же лежат его метрики: без
+/// них после F5 нечем было бы нарисовать ни строку под ответом, ни график.
+/// Старые файлы поля не знают — у них `None`. В запрос к провайдеру метрики
+/// не уходят, туда собирается голая пара `role`/`content` (см. `wire`).
+///
+/// Роль `error` — отклонённый запрос: он остаётся в истории, но провайдеру
+/// не отправляется (см. `goes_to_api`). У такой записи заполнены
+/// `attempted_*`: сколько символов и примерно токенов было в отказанном
+/// сообщении. У обычных реплик эти поля пустые и в файл не пишутся.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Message {
+    pub role: String,
+    pub content: String,
+    #[serde(default)]
+    pub metrics: Option<Metrics>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempted_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempted_chars: Option<u32>,
+}
+
+impl Message {
+    pub fn new(role: &str, content: String) -> Message {
+        Message {
+            role: role.to_string(),
+            content,
+            metrics: None,
+            attempted_tokens: None,
+            attempted_chars: None,
+        }
+    }
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
+pub struct Usage {
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    pub reasoning_tokens: u64,
+    /// Вход, попавший в кэш провайдера. У DeepSeek он почти бесплатен, у
+    /// Cerebras такого поля нет — там всегда 0.
+    pub cached_prompt_tokens: u64,
+    /// Стоимость вызова в долларах, посчитанная самим провайдером.
+    /// Присылает её только OpenRouter (`usage.cost`), у остальных `None` —
+    /// там стоимость считается по прайс-листу из `ModelInfo`.
+    pub api_cost_usd: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Metrics {
+    pub provider: String,
+    pub model: String,
+    pub reasoning: String,
+    pub finish_reason: Option<String>,
+    /// Клиентские замеры: от отправки запроса до первой дельты и до конца.
+    pub ttft_ms: Option<u128>,
+    pub total_ms: u128,
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    pub reasoning_tokens: u64,
+    pub cached_prompt_tokens: u64,
+    /// Скорость по `time_info.completion_time` самого Cerebras — без сети.
+    /// DeepSeek таких таймингов не присылает, там всегда `None`.
+    pub server_tok_s: Option<f64>,
+    /// Она же, но по часам клиента: генерация считается от первой дельты.
+    pub client_tok_s: Option<f64>,
+    pub cost_usd: Option<f64>,
+}
+
+impl Metrics {
+    fn build(
+        settings: &Settings,
+        finish_reason: Option<String>,
+        ttft_ms: Option<u128>,
+        total_ms: u128,
+        usage: Usage,
+        completion_time: Option<f64>,
+    ) -> Metrics {
+        let completion = usage.completion_tokens as f64;
+        // Нулевой знаменатель даёт бесконечность, а не метрику: честнее «—».
+        let server_tok_s = completion_time.filter(|t| *t > 0.0).map(|t| completion / t);
+        let client_tok_s = ttft_ms
+            .filter(|ttft| total_ms > *ttft)
+            .map(|ttft| completion / ((total_ms - ttft) as f64 / 1000.0));
+        Metrics {
+            provider: settings.provider.clone(),
+            model: settings.model.clone(),
+            reasoning: settings.reasoning.clone(),
+            finish_reason,
+            ttft_ms,
+            total_ms,
+            prompt_tokens: usage.prompt_tokens,
+            completion_tokens: usage.completion_tokens,
+            reasoning_tokens: usage.reasoning_tokens,
+            cached_prompt_tokens: usage.cached_prompt_tokens,
+            server_tok_s,
+            client_tok_s,
+            // Своя цифра провайдера точнее прайс-листа: она уже учитывает и
+            // скидки, и наценку роутера. Нет её — считаем по таблице.
+            cost_usd: usage
+                .api_cost_usd
+                .or_else(|| settings.provider().ok().and_then(|p| cost(p, &settings.model, usage))),
+        }
+    }
+}
+
+/// Стоимость вызова по прайсу. Токены рассуждения входят в
+/// `completion_tokens` и тарифицируются как выход — отдельно их не считаем.
+/// Вход, пришедший из кэша, у DeepSeek считается по нулю: платить за него
+/// как за обычный вход значило бы завышать счёт в разы на длинном чате.
+pub fn cost(provider: Provider, model: &str, usage: Usage) -> Option<f64> {
+    let info = provider.models().iter().find(|m| m.id == model)?;
+    let (price_in, price_out) = (info.price_in?, info.price_out?);
+    let billed_in = usage.prompt_tokens.saturating_sub(usage.cached_prompt_tokens);
+    Some(billed_in as f64 * price_in / 1e6 + usage.completion_tokens as f64 * price_out / 1e6)
+}
+
+#[derive(Debug)]
+pub enum Event {
+    Reasoning(String),
+    Content(String),
+    Done(Metrics),
+    /// Тема разговора, придуманная моделью после первого обмена.
+    Title(String),
+    Error(String),
+}
+
+/// Разобранная строка `data:` из потока. Не `data:` или неразбираемый
+/// JSON — `None`: такие строки в потоке штатны (пустые, комментарии).
+#[derive(Default, Debug, PartialEq)]
+pub struct Chunk {
+    pub reasoning: String,
+    pub content: String,
+    pub finish_reason: Option<String>,
+    pub usage: Option<Usage>,
+    /// `time_info.completion_time`, секунды. Только Cerebras.
+    pub completion_time: Option<f64>,
+    /// Строка `data: [DONE]` — конец потока.
+    pub done: bool,
+    /// Ошибка, пришедшая внутри потока (статус при этом 200).
+    pub error: Option<String>,
+}
+
+/// Разбор одинаков для обоих провайдеров: поля, которых у провайдера нет,
+/// просто не находятся. Рассуждение Cerebras зовётся `reasoning`, у
+/// DeepSeek — `reasoning_content`; кэш входа есть только у DeepSeek.
+pub fn parse_chunk(line: &str) -> Option<Chunk> {
+    let data = line.trim().strip_prefix("data:")?.trim();
+    if data == "[DONE]" {
+        return Some(Chunk { done: true, ..Chunk::default() });
+    }
+    let value: Value = serde_json::from_str(data).ok()?;
+    if value.get("error").is_some_and(|e| !e.is_null()) {
+        return Some(Chunk {
+            error: Some(api_error(&value["error"].to_string())),
+            ..Chunk::default()
+        });
+    }
+    let delta = &value["choices"][0]["delta"];
+    let reasoning = delta["reasoning"]
+        .as_str()
+        .or_else(|| delta["reasoning_content"].as_str())
+        .unwrap_or("");
+    let usage = &value["usage"];
+    Some(Chunk {
+        reasoning: reasoning.to_string(),
+        content: delta["content"].as_str().unwrap_or("").to_string(),
+        finish_reason: value["choices"][0]["finish_reason"].as_str().map(String::from),
+        usage: usage.is_object().then(|| Usage {
+            prompt_tokens: usage["prompt_tokens"].as_u64().unwrap_or(0),
+            completion_tokens: usage["completion_tokens"].as_u64().unwrap_or(0),
+            reasoning_tokens: usage["completion_tokens_details"]["reasoning_tokens"]
+                .as_u64()
+                .unwrap_or(0),
+            cached_prompt_tokens: usage["prompt_cache_hit_tokens"].as_u64().unwrap_or(0),
+            api_cost_usd: usage["cost"].as_f64(),
+        }),
+        completion_time: value["time_info"]["completion_time"].as_f64(),
+        done: false,
+        error: None,
+    })
+}
+
+/// Тело запроса. Общая часть — формат OpenAI Chat Completions; расходятся
+/// провайдеры на потолке ответа, управлении рассуждением и на том, кто
+/// присылает `usage` в стриме без спроса.
+fn request_body(provider: Provider, settings: &Settings, messages: &[Message]) -> Value {
+    let max_tokens = settings.max_tokens();
+    let mut body = json!({
+        "model": settings.model,
+        "messages": wire(messages),
+        "stream": true,
+        "temperature": settings.temperature,
+    });
+    let map = body.as_object_mut().expect("собран как объект");
+    match provider {
+        Provider::Cerebras => {
+            map.insert("max_completion_tokens".to_string(), json!(max_tokens));
+            map.insert("reasoning_effort".to_string(), json!(settings.reasoning));
+        }
+        Provider::DeepSeek => {
+            map.insert("max_tokens".to_string(), json!(max_tokens));
+            // Без этого DeepSeek не присылает usage последним чанком, и
+            // считать стоимость было бы не из чего.
+            map.insert("stream_options".to_string(), json!({ "include_usage": true }));
+            if settings.reasoning == "none" {
+                map.insert("thinking".to_string(), json!({ "type": "disabled" }));
+            } else {
+                map.insert("thinking".to_string(), json!({ "type": "enabled" }));
+                map.insert("reasoning_effort".to_string(), json!(settings.reasoning));
+            }
+        }
+        Provider::OpenRouter => {
+            map.insert("max_tokens".to_string(), json!(max_tokens));
+            // Своя форма просьбы про usage: с ней в последнем чанке приезжает
+            // и `cost` — сколько вызов стоил на самом деле.
+            map.insert("usage".to_string(), json!({ "include": true }));
+            // Плагин сжатия роутер включает сам на тесных моделях: молча
+            // режет середину истории, вместо того чтобы вернуть 400.
+            if !settings.router_compression {
+                map.insert(
+                    "plugins".to_string(),
+                    json!([{ "id": "context-compression", "enabled": false }]),
+                );
+            }
+        }
+    }
+    body
+}
+
+/// Реплики в том виде, в каком их ждёт API: только `role` и `content`.
+/// Метрики — наша бухгалтерия, провайдеру их слать незачем.
+fn wire(messages: &[Message]) -> Vec<Value> {
+    messages
+        .iter()
+        .filter(|m| goes_to_api(m))
+        .map(|m| json!({ "role": m.role, "content": m.content }))
+        .collect()
+}
+
+/// Уходит ли реплика провайдеру. Отклонённый запрос (`error`) живёт в истории
+/// ради ленты и счётчиков, но роли `error` в API нет — такой запрос вернул бы
+/// 400 сам по себе.
+fn goes_to_api(m: &Message) -> bool {
+    matches!(m.role.as_str(), "system" | "user" | "assistant")
+}
+
+/// Промпт для темы чата. Отдельный дешёвый вызов: рассуждение выключено,
+/// потолок в два десятка токенов, ответ не стримится.
+const TITLE_PROMPT: &str =
+    "Сформулируй тему разговора в 2–5 словах на языке собеседника. Только тема, без кавычек, точки и пояснений.";
+const TITLE_MAX_TOKENS: u32 = 24;
+/// Сколько символов первого вопроса и первого ответа отдаём модели: тема
+/// видна по началу разговора, платить за весь ответ незачем.
+const TITLE_SOURCE_LIMIT: usize = 600;
+/// Потолок самой темы. Длиннее в список чатов всё равно не влезет.
+const TITLE_LIMIT: usize = 60;
+
+fn title_body(provider: Provider, model: &str, question: &str, answer: &str) -> Value {
+    let user = format!(
+        "Вопрос: {}\n\nОтвет: {}",
+        head(question, TITLE_SOURCE_LIMIT),
+        head(answer, TITLE_SOURCE_LIMIT)
+    );
+    let mut body = json!({
+        "model": model,
+        "messages": [
+            { "role": "system", "content": TITLE_PROMPT },
+            { "role": "user", "content": user },
+        ],
+        "stream": false,
+        "temperature": 0.3,
+    });
+    let map = body.as_object_mut().expect("собран как объект");
+    match provider {
+        Provider::Cerebras => {
+            map.insert("max_completion_tokens".to_string(), json!(TITLE_MAX_TOKENS));
+            map.insert("reasoning_effort".to_string(), json!("none"));
+        }
+        Provider::DeepSeek => {
+            map.insert("max_tokens".to_string(), json!(TITLE_MAX_TOKENS));
+            map.insert("thinking".to_string(), json!({ "type": "disabled" }));
+        }
+        Provider::OpenRouter => {
+            map.insert("max_tokens".to_string(), json!(TITLE_MAX_TOKENS));
+        }
+    }
+    body
+}
+
+/// Модель просили отдать голую тему, но кавычки и точку она всё равно
+/// иногда ставит. Пусто — темы нет, заголовок останется прежним.
+fn clean_title(raw: &str) -> Option<String> {
+    let unquoted = raw.trim().trim_matches(|c| matches!(c, '"' | '\'' | '`' | '«' | '»'));
+    let text = unquoted.trim().trim_end_matches('.').trim();
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.is_empty() {
+        return None;
+    }
+    Some(text.chars().take(TITLE_LIMIT).collect())
+}
+
+fn head(text: &str, limit: usize) -> String {
+    text.chars().take(limit).collect()
+}
+
+pub struct Agent {
+    client: Client,
+    /// Ключи тех провайдеров, что нашлись в окружении. Провайдер без ключа
+    /// не исчезает из интерфейса — он помечен недоступным с причиной.
+    keys: HashMap<Provider, String>,
+    /// Занятые чаты. Занятость на чат, а не на агента: два разных чата
+    /// могут отвечать одновременно, один и тот же — нет.
+    busy: Mutex<HashSet<String>>,
+}
+
+impl Agent {
+    /// Ключи читаются из окружения (`.env` подхватывает `main`). Ни одного
+    /// ключа — запускаться незачем.
+    pub fn new() -> Result<Agent, String> {
+        let keys: HashMap<Provider, String> = Provider::ALL
+            .into_iter()
+            .filter_map(|p| {
+                let key = std::env::var(p.key_env()).ok().filter(|v| !v.trim().is_empty())?;
+                Some((p, key))
+            })
+            .collect();
+        if keys.is_empty() {
+            return Err(
+                "не задан ни один ключ (CEREBRAS_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY): скопируй .env.example в .env"
+                    .to_string(),
+            );
+        }
+        let client = Client::builder()
+            .connect_timeout(Duration::from_secs(15))
+            .timeout(TIMEOUT)
+            .build()
+            .map_err(|e| format!("не удалось создать HTTP-клиент: {e}"))?;
+        Ok(Agent { client, keys, busy: Mutex::new(HashSet::new()) })
+    }
+
+    pub fn is_available(&self, provider: Provider) -> bool {
+        self.keys.contains_key(&provider)
+    }
+
+    /// Первый провайдер с ключом — на нём открывается новый чат, если
+    /// наследовать настройки не у кого.
+    pub fn default_settings(&self) -> Settings {
+        let settings = Settings::default();
+        if settings.provider().is_ok_and(|p| self.is_available(p)) {
+            return settings;
+        }
+        match Provider::ALL.into_iter().find(|p| self.is_available(*p)) {
+            Some(p) => Settings {
+                provider: p.id().to_string(),
+                model: p.models()[0].id.to_string(),
+                ..settings
+            },
+            None => settings,
+        }
+    }
+
+    fn key(&self, provider: Provider) -> Result<&String, String> {
+        self.keys
+            .get(&provider)
+            .ok_or(format!("нет {} в .env — провайдер {} недоступен", provider.key_env(), provider.label()))
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashSet<String>> {
+        self.busy.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Один вопрос: дописывает его в чат, стримит дельты в `tx` и по
+    /// завершении кладёт в чат текст ответа (без рассуждения). Сохранение
+    /// на диск — забота вызывающего: агент не знает, где лежат файлы.
+    ///
+    /// Рассуждение назад в историю не отправляется: по документации обоих
+    /// провайдеров оно относится к одному ответу и в следующем запросе
+    /// игнорируется.
+    pub async fn ask(
+        &self,
+        chat: &mut Chat,
+        text: &str,
+        tx: &mpsc::Sender<Event>,
+    ) -> Result<Metrics, String> {
+        let text = text.trim().to_string();
+        if text.is_empty() {
+            return Err("пустой запрос".to_string());
+        }
+        chat.settings.validate()?;
+        let provider = chat.settings.provider()?;
+        let key = self.key(provider)?.clone();
+
+        if !self.lock().insert(chat.id.clone()) {
+            return Err("чат занят: дождись конца предыдущего ответа".to_string());
+        }
+        chat.push_user(&text);
+
+        let mut messages =
+            vec![Message::new("system", chat.settings.system_prompt.clone())];
+        messages.extend(chat.messages.iter().cloned());
+        // Символы считаем до запроса: по ним и по `prompt_tokens` из ответа
+        // калибруется «сколько символов в токене» для оценки на клиенте.
+        let sent_chars = sent_chars(&messages);
+
+        let outcome = self.stream(provider, &key, &chat.settings, &messages, tx).await;
+        self.lock().remove(&chat.id);
+
+        match outcome {
+            Ok((answer, metrics)) => {
+                chat.calibrate(sent_chars, metrics.prompt_tokens);
+                chat.push_assistant(answer, Some(metrics.clone()));
+                Ok(metrics)
+            }
+            Err(error) => {
+                // Вопрос без ответа откатывается, но след от него остаётся:
+                // иначе после переключения чата отказ исчезал бы, а счётчики
+                // показывали бы последний удавшийся ход.
+                chat.pop_user(&text);
+                chat.push_error(&error, text.chars().count());
+                Err(error)
+            }
+        }
+    }
+
+    /// Тема разговора по первому обмену — одним дешёвым запросом к тому же
+    /// провайдеру и той же модели. Зовётся один раз за жизнь чата, поэтому
+    /// любая осечка (нет ключа, сеть, пустой ответ) — просто `None`:
+    /// заголовок из первого вопроса уже есть, и терять из-за темы нечего.
+    /// В метрики этот вызов не попадает — он не ответ на вопрос человека.
+    pub async fn title(&self, chat: &Chat) -> Option<String> {
+        let provider = chat.settings.provider().ok()?;
+        let key = self.keys.get(&provider)?;
+        let [question, answer, ..] = chat.messages.as_slice() else { return None };
+
+        let body = title_body(provider, &chat.settings.model, &question.content, &answer.content);
+        let response = self
+            .client
+            .post(provider.base_url())
+            .bearer_auth(key)
+            .json(&body)
+            .send()
+            .await
+            .ok()?;
+        if !response.status().is_success() {
+            return None;
+        }
+        let value: Value = response.json().await.ok()?;
+        clean_title(value["choices"][0]["message"]["content"].as_str()?)
+    }
+
+    async fn stream(
+        &self,
+        provider: Provider,
+        key: &str,
+        settings: &Settings,
+        messages: &[Message],
+        tx: &mpsc::Sender<Event>,
+    ) -> Result<(String, Metrics), String> {
+        let started = Instant::now();
+        let mut response = self
+            .client
+            .post(provider.base_url())
+            .bearer_auth(key)
+            .json(&request_body(provider, settings, messages))
+            .send()
+            .await
+            .map_err(describe)?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let text = response.text().await.unwrap_or_default();
+            return Err(format!("API вернул {status}: {}", api_error(&text)));
+        }
+
+        let mut content = String::new();
+        let mut usage = Usage::default();
+        let mut completion_time = None;
+        let mut finish_reason = None;
+        let mut ttft_ms = None;
+        let mut buf: Vec<u8> = Vec::new();
+        // Ошибку провайдера можно получить обычным JSON со статусом 200 и
+        // без единого события SSE: тогда показываем тело, а не «пустой ответ».
+        let mut head = String::new();
+        let mut saw_data = false;
+
+        while let Some(bytes) = response.chunk().await.map_err(describe)? {
+            if head.len() < 4096 {
+                head.push_str(&String::from_utf8_lossy(&bytes));
+            }
+            buf.extend_from_slice(&bytes);
+            while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+                let line: Vec<u8> = buf.drain(..=pos).collect();
+                let Some(chunk) = parse_chunk(&String::from_utf8_lossy(&line)) else { continue };
+                saw_data = true;
+                if let Some(error) = chunk.error {
+                    return Err(format!("API вернул ошибку в потоке: {error}"));
+                }
+                if chunk.done {
+                    continue;
+                }
+                if !chunk.reasoning.is_empty() {
+                    ttft_ms.get_or_insert_with(|| started.elapsed().as_millis());
+                    let _ = tx.send(Event::Reasoning(chunk.reasoning)).await;
+                }
+                if !chunk.content.is_empty() {
+                    ttft_ms.get_or_insert_with(|| started.elapsed().as_millis());
+                    content.push_str(&chunk.content);
+                    let _ = tx.send(Event::Content(chunk.content)).await;
+                }
+                if let Some(reason) = chunk.finish_reason {
+                    finish_reason = Some(reason);
+                }
+                if let Some(u) = chunk.usage {
+                    usage = u;
+                }
+                if let Some(t) = chunk.completion_time {
+                    completion_time = Some(t);
+                }
+            }
+        }
+
+        if !saw_data {
+            return Err(format!("вместо потока событий пришло: {}", api_error(head.trim())));
+        }
+        if content.trim().is_empty() {
+            return Err(match finish_reason.as_deref() {
+                Some("length") => format!("ответ оборван лимитом {} токенов", settings.max_tokens()),
+                _ => "модель вернула пустой ответ".to_string(),
+            });
+        }
+
+        let total_ms = started.elapsed().as_millis();
+        let metrics = Metrics::build(settings, finish_reason, ttft_ms, total_ms, usage, completion_time);
+        Ok((content, metrics))
+    }
+}
+
+/// Сколько символов ушло в запрос: системный промпт плюс вся история.
+/// Считаем `chars()`, а не байты: в кириллице байтов вдвое больше, и оценка
+/// «символов на токен» по ним врала бы ровно во столько же раз. Отклонённые
+/// запросы не в счёт: в тело запроса они не попадают, и калибровку по ним
+/// вести значило бы завышать «символов на токен».
+pub fn sent_chars(messages: &[Message]) -> usize {
+    messages.iter().filter(|m| goes_to_api(m)).map(|m| m.content.chars().count()).sum()
+}
+
+/// Похожа ли ошибка провайдера на переполнение контекста. Точного признака
+/// нет: код у всех 400, а текст свой у каждого — поэтому простая проверка на
+/// несколько подстрок. Нужна она только для бейджа на пузыре, поэтому
+/// ложное срабатывание дешевле пропуска.
+pub fn is_context_overflow(error: &str) -> bool {
+    let text = error.to_lowercase();
+    text.contains("maximum context length")
+        || text.contains("context_length_exceeded")
+        || text.contains("too many tokens")
+        || (text.contains("context") && (text.contains("exceed") || text.contains("limit")))
+        || (text.contains("tokens") && (text.contains("exceed") || text.contains("limit")))
+}
+
+/// Из тела ошибки достаётся человеческая часть; не разобралось — начало тела.
+fn api_error(text: &str) -> String {
+    let Ok(value) = serde_json::from_str::<Value>(text) else {
+        return truncate(text, 300);
+    };
+    let error = if value["error"].is_object() { &value["error"] } else { &value };
+    let message = error["message"].as_str().unwrap_or("").trim();
+    if message.is_empty() {
+        truncate(text, 300)
+    } else {
+        truncate(message, 300)
+    }
+}
+
+fn describe(err: reqwest::Error) -> String {
+    let cause = if err.is_timeout() {
+        format!("превышено ожидание ({} с)", TIMEOUT.as_secs())
+    } else if err.is_connect() {
+        "не удалось соединиться с API (сеть, DNS или TLS)".to_string()
+    } else {
+        "сбой запроса".to_string()
+    };
+    format!("{cause}: {err}")
+}
+
+fn truncate(text: &str, limit: usize) -> String {
+    if text.chars().count() <= limit {
+        return text.to_string();
+    }
+    let head: String = text.chars().take(limit).collect();
+    format!("{head}… (обрезано)")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reasoning_and_content_deltas_are_separate() {
+        let reasoning = parse_chunk(
+            r#"data: {"choices":[{"delta":{"reasoning":"надо подумать"},"index":0}]}"#,
+        )
+        .expect("строка data: разбирается");
+        assert_eq!(reasoning.reasoning, "надо подумать");
+        assert!(reasoning.content.is_empty());
+        assert!(reasoning.usage.is_none());
+
+        let content =
+            parse_chunk(r#"data: {"choices":[{"delta":{"content":"Привет"},"index":0}]}"#).unwrap();
+        assert_eq!(content.content, "Привет");
+        assert!(content.reasoning.is_empty());
+
+        // Не data: и мусор внутри data: — не события, а не паника.
+        assert!(parse_chunk(": keep-alive").is_none());
+        assert!(parse_chunk("").is_none());
+        assert!(parse_chunk("data: {не json}").is_none());
+    }
+
+    /// У DeepSeek рассуждение приезжает в другом поле — разбор один на двоих.
+    #[test]
+    fn deepseek_reasoning_content_lands_in_the_same_field() {
+        let line = r#"data: {"id":"a","choices":[{"index":0,"delta":{"content":null,"reasoning_content":"прикидываю"},"finish_reason":null}],"model":"deepseek-v4-flash","object":"chat.completion.chunk"}"#;
+        let chunk = parse_chunk(line).expect("чанк DeepSeek разбирается");
+        assert_eq!(chunk.reasoning, "прикидываю");
+        assert!(chunk.content.is_empty());
+        assert_eq!(chunk.completion_time, None, "time_info DeepSeek не присылает");
+    }
+
+    /// Реальный последний чанк Cerebras: счётчики и тайминги приходят с ним.
+    #[test]
+    fn final_chunk_carries_usage_and_time_info() {
+        let line = r#"data: {"id":"chatcmpl-x","choices":[{"delta":{},"finish_reason":"length","index":0}],"created":1788791665,"model":"qwen-3.8-27b","object":"chat.completion.chunk","usage":{"total_tokens":62,"completion_tokens":8,"completion_tokens_details":{"reasoning_tokens":8},"prompt_tokens":54,"prompt_tokens_details":{"cached_tokens":0,"image_tokens":0}},"time_info":{"created":1788791665.212307,"queue_time":0.000216711,"prompt_time":0.003160362,"completion_time":0.002019803,"total_time":0.009371042251586914}}"#;
+        let chunk = parse_chunk(line).expect("финальный чанк разбирается");
+        assert_eq!(chunk.finish_reason.as_deref(), Some("length"));
+        assert_eq!(
+            chunk.usage,
+            Some(Usage {
+                prompt_tokens: 54,
+                completion_tokens: 8,
+                reasoning_tokens: 8,
+                cached_prompt_tokens: 0,
+                api_cost_usd: None,
+            })
+        );
+        assert_eq!(chunk.completion_time, Some(0.002019803));
+        assert!(chunk.content.is_empty() && chunk.reasoning.is_empty());
+    }
+
+    #[test]
+    fn deepseek_usage_reports_the_cache_hit() {
+        let line = r#"data: {"id":"b","choices":[],"model":"deepseek-v4-flash","object":"chat.completion.chunk","usage":{"prompt_tokens":1000,"completion_tokens":50,"total_tokens":1050,"prompt_cache_hit_tokens":900,"prompt_cache_miss_tokens":100}}"#;
+        let usage = parse_chunk(line).expect("чанк с usage разбирается").usage.expect("usage есть");
+        assert_eq!(usage.prompt_tokens, 1000);
+        assert_eq!(usage.cached_prompt_tokens, 900);
+    }
+
+    /// Последний чанк OpenRouter: стоимость вызова провайдер считает сам.
+    #[test]
+    fn openrouter_final_chunk_carries_the_price_of_the_call() {
+        let line = r#"data: {"id":"gen-1","choices":[{"delta":{"content":""},"finish_reason":"stop","index":0}],"model":"openai/gpt-3.5-turbo-0613","object":"chat.completion.chunk","usage":{"prompt_tokens":142,"completion_tokens":18,"total_tokens":160,"cost":0.000178,"completion_tokens_details":{"reasoning_tokens":0}}}"#;
+        let usage = parse_chunk(line).expect("чанк OpenRouter разбирается").usage.expect("usage есть");
+        assert_eq!(usage.prompt_tokens, 142);
+        assert_eq!(usage.completion_tokens, 18);
+        assert_eq!(usage.api_cost_usd, Some(0.000178));
+        // Ни у Cerebras, ни у DeepSeek поля `cost` нет — там остаётся None.
+        let cerebras = r#"data: {"choices":[{"delta":{},"index":0}],"usage":{"prompt_tokens":54,"completion_tokens":8}}"#;
+        assert_eq!(parse_chunk(cerebras).unwrap().usage.unwrap().api_cost_usd, None);
+    }
+
+    #[test]
+    fn openrouter_takes_the_cost_from_the_api_not_from_the_table() {
+        let settings = Settings {
+            provider: "openrouter".to_string(),
+            model: "openai/gpt-3.5-turbo-0613".to_string(),
+            reasoning: "none".to_string(),
+            ..Settings::default()
+        };
+        assert!(settings.validate().is_ok());
+        let usage = Usage {
+            prompt_tokens: 142,
+            completion_tokens: 18,
+            reasoning_tokens: 0,
+            cached_prompt_tokens: 0,
+            // Своя цена роутера с наценкой: по прайс-листу вышло бы 0.000178.
+            api_cost_usd: Some(0.000195),
+        };
+        let m = Metrics::build(&settings, Some("stop".to_string()), Some(300), 900, usage, None);
+        assert_eq!(m.cost_usd, Some(0.000195), "цена берётся из usage.cost");
+        let by_table = cost(Provider::OpenRouter, &settings.model, usage).expect("прайс есть");
+        assert!((by_table - 0.000195).abs() > 1e-9, "таблица дала бы {by_table}");
+        // Без цены от провайдера падаем обратно на таблицу.
+        let fallback = Metrics::build(
+            &settings,
+            None,
+            Some(300),
+            900,
+            Usage { api_cost_usd: None, ..usage },
+            None,
+        );
+        assert_eq!(fallback.cost_usd, Some(by_table));
+        assert!(Provider::OpenRouter.cost_from_api());
+        assert!(!Provider::Cerebras.cost_from_api());
+    }
+
+    /// Потолок ответа входит в то же окно, что и промпт: у 4k-модели он свой.
+    #[test]
+    fn max_tokens_comes_from_the_model() {
+        let messages = [Message::new("user", "привет".to_string())];
+        let small = Settings {
+            provider: "openrouter".to_string(),
+            model: "openai/gpt-3.5-turbo-0613".to_string(),
+            reasoning: "none".to_string(),
+            ..Settings::default()
+        };
+        assert_eq!(small.max_tokens(), 1024);
+        let body = request_body(Provider::OpenRouter, &small, &messages);
+        assert_eq!(body["max_tokens"], json!(1024));
+        assert_eq!(body["usage"]["include"], json!(true));
+        assert!(body.get("reasoning").is_none(), "модели OpenRouter не рассуждают");
+        assert!(body.get("reasoning_effort").is_none());
+
+        let bigger = Settings { model: "gryphe/mythomax-l2-13b".to_string(), ..small };
+        assert_eq!(bigger.max_tokens(), 2048);
+        assert_eq!(request_body(Provider::OpenRouter, &bigger, &messages)["max_tokens"], json!(2048));
+
+        // У остальных провайдеров потолок прежний.
+        assert_eq!(Settings::default().max_tokens(), 4096);
+        assert_eq!(Settings::default().model_info().map(|m| m.context_window), Some(65_536));
+    }
+
+    /// Метрики в историю попадают, а в запрос к провайдеру — нет.
+    #[test]
+    fn wire_messages_carry_only_role_and_content() {
+        let mut answer = Message::new("assistant", "готово".to_string());
+        answer.metrics = Some(Metrics::build(
+            &Settings::default(),
+            None,
+            None,
+            10,
+            Usage::default(),
+            None,
+        ));
+        let body = request_body(Provider::Cerebras, &Settings::default(), &[answer]);
+        let sent = &body["messages"][0];
+        assert_eq!(sent["content"], json!("готово"));
+        assert!(sent.get("metrics").is_none(), "метрики провайдеру не отправляются");
+        assert_eq!(sent.as_object().map(|o| o.len()), Some(2));
+    }
+
+    /// Отклонённый запрос лежит в истории, но в API его роли нет: ни в теле
+    /// запроса, ни в калибровке «символов на токен» он участвовать не должен.
+    #[test]
+    fn rejected_requests_stay_out_of_the_request_and_the_calibration() {
+        let rejected = Message {
+            attempted_tokens: Some(1400),
+            attempted_chars: Some(4200),
+            ..Message::new("error", "API вернул 400: context_length_exceeded".to_string())
+        };
+        let messages = [
+            Message::new("system", "промпт".to_string()),
+            Message::new("user", "вопрос".to_string()),
+            Message::new("assistant", "ответ".to_string()),
+            rejected,
+            Message::new("user", "ещё вопрос".to_string()),
+        ];
+
+        let body = request_body(Provider::Cerebras, &Settings::default(), &messages);
+        let sent = body["messages"].as_array().expect("массив сообщений");
+        assert_eq!(sent.len(), 4, "запись error провайдеру не отправляется");
+        assert!(sent.iter().all(|m| m["role"] != json!("error")), "{sent:?}");
+        assert_eq!(sent.last().map(|m| m["content"].clone()), Some(json!("ещё вопрос")));
+
+        // 6 + 6 + 5 + 10 — текст ошибки в калибровку не входит.
+        assert_eq!(sent_chars(&messages), 27);
+    }
+
+    #[test]
+    fn overflow_is_told_apart_from_other_failures() {
+        for text in [
+            "API вернул 400 Bad Request: This model's maximum context length is 4095 tokens, however you requested 5200 tokens",
+            "API вернул 400: {\"code\":\"context_length_exceeded\"}",
+            "Input too many tokens for this model",
+            "prompt tokens exceed the limit of the model",
+        ] {
+            assert!(is_context_overflow(text), "должно считаться переполнением: {text}");
+        }
+        for text in [
+            "не удалось соединиться с API (сеть, DNS или TLS)",
+            "API вернул 401 Unauthorized: no auth credentials found",
+            "модель вернула пустой ответ",
+        ] {
+            assert!(!is_context_overflow(text), "не переполнение: {text}");
+        }
+    }
+
+    #[test]
+    fn sent_chars_counts_characters_not_bytes() {
+        let messages = [
+            Message::new("system", "промпт".to_string()),
+            Message::new("user", "вопрос".to_string()),
+        ];
+        assert_eq!(sent_chars(&messages), 12);
+        assert_eq!(sent_chars(&[]), 0);
+    }
+
+    #[test]
+    fn done_marker_is_recognised() {
+        let done = parse_chunk("data: [DONE]").expect("маркер конца разбирается");
+        assert!(done.done);
+        assert_eq!(done, Chunk { done: true, ..Chunk::default() });
+    }
+
+    #[test]
+    fn cost_follows_the_price_table_and_is_none_without_prices() {
+        let usage = Usage { prompt_tokens: 54, completion_tokens: 312, reasoning_tokens: 8, cached_prompt_tokens: 0, api_cost_usd: None };
+        let expected = 54e-6 * 0.99 + 312e-6 * 1.49;
+        let actual = cost(Provider::Cerebras, "qwen-3.8-27b", usage).expect("у qwen есть цена");
+        assert!((actual - expected).abs() < 1e-12, "{actual} != {expected}");
+
+        // У Gemma цены на странице нет — стоимость не выдумывается.
+        assert!(cost(Provider::Cerebras, "gemma-4-31b", usage).is_none());
+        assert!(cost(Provider::Cerebras, "нет-такой-модели", usage).is_none());
+        // Модель чужого провайдера не считается по своему прайсу.
+        assert!(cost(Provider::Cerebras, "deepseek-v4-pro", usage).is_none());
+    }
+
+    #[test]
+    fn deepseek_cache_hit_is_billed_at_zero() {
+        let usage = Usage {
+            prompt_tokens: 1000,
+            completion_tokens: 200,
+            reasoning_tokens: 0,
+            cached_prompt_tokens: 900,
+            api_cost_usd: None,
+        };
+        // Платим за 100 токенов входа из 1000 и за весь выход.
+        let expected = 100e-6 * 0.22 + 200e-6 * 0.66;
+        let actual = cost(Provider::DeepSeek, "deepseek-v4-flash", usage).expect("цена есть");
+        assert!((actual - expected).abs() < 1e-12, "{actual} != {expected}");
+
+        // Без кэша тот же вызов стоит заметно дороже.
+        let no_cache = cost(
+            Provider::DeepSeek,
+            "deepseek-v4-flash",
+            Usage { cached_prompt_tokens: 0, ..usage },
+        )
+        .unwrap();
+        assert!(no_cache > actual);
+    }
+
+    fn metrics(ttft_ms: Option<u128>, total_ms: u128, completion_time: Option<f64>) -> Metrics {
+        Metrics::build(
+            &Settings::default(),
+            Some("stop".to_string()),
+            ttft_ms,
+            total_ms,
+            Usage { prompt_tokens: 10, completion_tokens: 100, reasoning_tokens: 0, cached_prompt_tokens: 0, api_cost_usd: None },
+            completion_time,
+        )
+    }
+
+    #[test]
+    fn tokens_per_second_needs_a_positive_denominator() {
+        let m = metrics(Some(200), 1200, Some(0.05));
+        assert_eq!(m.server_tok_s, Some(2000.0));
+        // Генерация считается от первой дельты: 1200 − 200 = 1 с на 100 токенов.
+        assert_eq!(m.client_tok_s, Some(100.0));
+
+        // Ни один нулевой знаменатель не должен превратиться в бесконечность.
+        assert_eq!(metrics(Some(200), 1200, Some(0.0)).server_tok_s, None);
+        assert_eq!(metrics(Some(200), 1200, None).server_tok_s, None);
+        assert_eq!(metrics(Some(1200), 1200, None).client_tok_s, None);
+        assert_eq!(metrics(None, 1200, None).client_tok_s, None);
+    }
+
+    #[test]
+    fn settings_are_validated_against_their_provider() {
+        let ok = Settings::default();
+        assert_eq!(ok.provider, "cerebras");
+        assert_eq!(ok.model, "qwen-3.8-27b");
+        assert_eq!(ok.reasoning, "none");
+        assert!(ok.validate().is_ok());
+
+        let bad_provider = Settings { provider: "openai".to_string(), ..Settings::default() };
+        assert!(bad_provider.validate().is_err());
+
+        // Модель существует, но у другого провайдера — тоже отказ.
+        let mixed = Settings { model: "deepseek-v4-pro".to_string(), ..Settings::default() };
+        assert!(mixed.validate().is_err());
+
+        for temperature in [-0.1, 2.1] {
+            let s = Settings { temperature, ..Settings::default() };
+            assert!(s.validate().is_err(), "температура {temperature} должна отклоняться");
+        }
+        for temperature in [0.0, 2.0] {
+            let s = Settings { temperature, ..Settings::default() };
+            assert!(s.validate().is_ok(), "температура {temperature} допустима");
+        }
+
+        // «medium» есть у Cerebras и нет у DeepSeek, «max» — наоборот.
+        let cerebras_medium = Settings { reasoning: "medium".to_string(), ..Settings::default() };
+        assert!(cerebras_medium.validate().is_ok());
+        let cerebras_max = Settings { reasoning: "max".to_string(), ..Settings::default() };
+        assert!(cerebras_max.validate().is_err());
+        let deepseek = Settings {
+            provider: "deepseek".to_string(),
+            model: "deepseek-v4-flash".to_string(),
+            reasoning: "medium".to_string(),
+            ..Settings::default()
+        };
+        assert!(deepseek.validate().is_err());
+        assert!(Settings { reasoning: "max".to_string(), ..deepseek }.validate().is_ok());
+    }
+
+    #[test]
+    fn request_body_matches_each_provider() {
+        let messages = [Message::new("user", "привет".to_string())];
+
+        let cerebras = request_body(Provider::Cerebras, &Settings::default(), &messages);
+        assert_eq!(cerebras["max_completion_tokens"], json!(4096));
+        assert_eq!(cerebras["reasoning_effort"], json!("none"));
+        assert!(cerebras.get("thinking").is_none());
+        assert!(cerebras.get("stream_options").is_none());
+
+        let off = Settings {
+            provider: "deepseek".to_string(),
+            model: "deepseek-v4-flash".to_string(),
+            reasoning: "none".to_string(),
+            ..Settings::default()
+        };
+        let body = request_body(Provider::DeepSeek, &off, &messages);
+        assert_eq!(body["max_tokens"], json!(4096));
+        assert!(body.get("max_completion_tokens").is_none());
+        assert_eq!(body["stream_options"]["include_usage"], json!(true));
+        assert_eq!(body["thinking"]["type"], json!("disabled"));
+        assert!(body.get("reasoning_effort").is_none(), "выключенное рассуждение уровня не имеет");
+
+        let on = Settings { reasoning: "high".to_string(), ..off };
+        let body = request_body(Provider::DeepSeek, &on, &messages);
+        assert_eq!(body["thinking"]["type"], json!("enabled"));
+        assert_eq!(body["reasoning_effort"], json!("high"));
+    }
+
+    /// Сжатие контекста роутером — единственный способ увидеть переполнение
+    /// как ошибку, поэтому по умолчанию плагин выключается явно.
+    #[test]
+    fn openrouter_turns_off_context_compression_unless_asked() {
+        let messages = [Message::new("user", "привет".to_string())];
+        let router = Settings {
+            provider: "openrouter".to_string(),
+            model: "openai/gpt-3.5-turbo-0613".to_string(),
+            reasoning: "none".to_string(),
+            ..Settings::default()
+        };
+        assert!(!router.router_compression, "по умолчанию сжатие выключено");
+
+        let body = request_body(Provider::OpenRouter, &router, &messages);
+        assert_eq!(body["plugins"][0]["id"], json!("context-compression"));
+        assert_eq!(body["plugins"][0]["enabled"], json!(false));
+
+        // Включённое сжатие — это поведение роутера по умолчанию: поля нет.
+        let on = Settings { router_compression: true, ..router.clone() };
+        assert!(request_body(Provider::OpenRouter, &on, &messages).get("plugins").is_none());
+
+        // У остальных провайдеров плагинов нет ни при каком значении флага.
+        for compression in [false, true] {
+            let cerebras = Settings { router_compression: compression, ..Settings::default() };
+            assert!(request_body(Provider::Cerebras, &cerebras, &messages).get("plugins").is_none());
+            let deepseek = Settings {
+                provider: "deepseek".to_string(),
+                model: "deepseek-v4-flash".to_string(),
+                router_compression: compression,
+                ..Settings::default()
+            };
+            assert!(request_body(Provider::DeepSeek, &deepseek, &messages).get("plugins").is_none());
+        }
+    }
+
+    #[test]
+    fn persona_is_validated_and_default_chat_starts_with_the_first_one() {
+        let ok = Settings::default();
+        assert_eq!(ok.persona, "robotics");
+        assert_eq!(ok.system_prompt, PERSONAS[0].prompt, "новый чат берёт шаблон личности");
+        assert!(ok.validate().is_ok());
+
+        for id in ["robotics", "ml", "ai", "chips", "free"] {
+            let s = Settings { persona: id.to_string(), ..Settings::default() };
+            assert!(s.validate().is_ok(), "личность {id} должна существовать");
+        }
+        for id in ["x", "", "Робототехник"] {
+            let s = Settings { persona: id.to_string(), ..Settings::default() };
+            assert!(s.validate().is_err(), "личность {id} должна отклоняться");
+        }
+        assert!(persona("ml").is_some_and(|p| p.name == "ML-инженер"));
+        assert!(persona("нет-такой").is_none());
+    }
+
+    /// Чаты, сохранённые до появления личностей, должны читаться дальше.
+    #[test]
+    fn old_settings_without_persona_fall_back_to_free() {
+        let json = r#"{"provider":"cerebras","model":"qwen-3.8-27b","temperature":0.7,
+            "reasoning":"none","system_prompt":"старый промпт"}"#;
+        let settings: Settings = serde_json::from_str(json).expect("старые настройки читаются");
+        assert_eq!(settings.persona, "free");
+        assert!(!settings.router_compression, "старый чат сжатия роутером не просил");
+        assert_eq!(settings.system_prompt, "старый промпт", "свой промпт чата не трогаем");
+        assert!(settings.validate().is_ok());
+    }
+
+    #[test]
+    fn title_is_stripped_of_quotes_dots_and_excess_length() {
+        assert_eq!(clean_title("  ПИД-регулятор  "), Some("ПИД-регулятор".to_string()));
+        assert_eq!(clean_title("«Настройка ПИД»"), Some("Настройка ПИД".to_string()));
+        assert_eq!(clean_title("\"Настройка ПИД.\""), Some("Настройка ПИД".to_string()));
+        assert_eq!(clean_title("Настройка ПИД..."), Some("Настройка ПИД".to_string()));
+        assert_eq!(clean_title("Настройка\n  ПИД"), Some("Настройка ПИД".to_string()));
+
+        assert_eq!(clean_title(""), None);
+        assert_eq!(clean_title("   "), None);
+        assert_eq!(clean_title("\"\""), None);
+        assert_eq!(clean_title("."), None);
+
+        let long = clean_title(&"а".repeat(200)).expect("длинная тема не пустая");
+        assert_eq!(long.chars().count(), TITLE_LIMIT);
+    }
+
+    #[test]
+    fn title_request_asks_for_a_short_answer_without_reasoning() {
+        let question = "б".repeat(1000);
+        let cerebras = title_body(Provider::Cerebras, "qwen-3.8-27b", &question, "ответ");
+        assert_eq!(cerebras["stream"], json!(false));
+        assert_eq!(cerebras["temperature"], json!(0.3));
+        assert_eq!(cerebras["max_completion_tokens"], json!(TITLE_MAX_TOKENS));
+        assert_eq!(cerebras["reasoning_effort"], json!("none"));
+        assert!(cerebras.get("thinking").is_none());
+        assert_eq!(cerebras["messages"][0]["content"], json!(TITLE_PROMPT));
+
+        // Длинный вопрос обрезается: за весь его текст платить незачем.
+        let user = cerebras["messages"][1]["content"].as_str().expect("вторая реплика — строка");
+        assert!(user.contains("ответ"));
+        assert_eq!(user.matches('б').count(), TITLE_SOURCE_LIMIT);
+
+        let deepseek = title_body(Provider::DeepSeek, "deepseek-v4-flash", "вопрос", "ответ");
+        assert_eq!(deepseek["stream"], json!(false));
+        assert_eq!(deepseek["max_tokens"], json!(TITLE_MAX_TOKENS));
+        assert!(deepseek.get("max_completion_tokens").is_none());
+        assert_eq!(deepseek["thinking"]["type"], json!("disabled"));
+        assert!(deepseek.get("reasoning_effort").is_none());
+    }
+}
