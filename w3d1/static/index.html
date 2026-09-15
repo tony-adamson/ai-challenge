@@ -1,0 +1,2365 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Лаборатория</title>
+<link rel="stylesheet" href="/static/colors_and_type.css">
+<style>
+  /* Bro Agent: тот же Calm Intelligence, акцент — Soft Violet на элементах ИИ.
+     Sage остаётся нейтральным активным состоянием, бордеры вместо теней. */
+  :root { --accent: var(--violet); --accent-soft: #F2EEFC; --accent-line: #E6E1FB; }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  button, input, select, textarea { font-family: var(--font-sans); }
+
+  /* ---------- Шапка ---------- */
+  .top {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--space-6);
+    padding: var(--space-4) var(--space-6);
+    border-bottom: var(--hairline); background: var(--surface);
+  }
+  .brand { display: flex; align-items: center; gap: var(--space-3); }
+  .brand .av { width: 36px; height: 36px; border-radius: 12px; background: var(--accent);
+    color: var(--fg-on-brand); display: flex; align-items: center; justify-content: center; }
+  .brand .n { font: 650 18px/22px var(--font-sans); letter-spacing: -0.02em; color: var(--fg-strong); }
+  .brand .s { font: 400 12px/16px var(--font-sans); color: var(--fg-subtle); }
+  .top-right { display: flex; align-items: center; gap: var(--space-3); }
+  .icon-btn { flex: none; border: 0; background: transparent; color: var(--fg-muted);
+    cursor: pointer; padding: 6px; border-radius: var(--r-sm); display: flex;
+    align-items: center; justify-content: center;
+    transition: background var(--dur-2) var(--ease-standard), color var(--dur-2) var(--ease-standard); }
+  .icon-btn:hover { background: var(--surface-mist); }
+  .icon-btn.on { color: var(--brand); }
+  .provider { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .provider .k { font: var(--fw-medium) var(--t-caption-size)/var(--t-caption-lh) var(--font-sans);
+    letter-spacing: var(--t-caption-tr); text-transform: uppercase; color: var(--fg-subtle); }
+  .provider .logo { color: var(--fg-muted); display: flex; min-height: 22px; }
+  .provider .logo svg { height: 22px; width: auto; display: block; }
+
+  /* ---------- Раскладка ---------- */
+  .main { flex: 1; display: grid; grid-template-columns: 240px 1fr 320px;
+    grid-template-areas: "side chat panel"; grid-template-rows: minmax(0, 1fr); min-height: 0; }
+  /* Свёрнутая колонка убирается из потока целиком: нулевая ширина без
+     display:none оставила бы висеть её бордер. */
+  .main.no-side { grid-template-columns: 0 1fr 320px; }
+  .main.no-panel { grid-template-columns: 240px 1fr 0; }
+  .main.no-side.no-panel { grid-template-columns: 0 1fr 0; }
+  .main.no-side > .sidebar, .main.no-panel > .panel { display: none; }
+  .chat { grid-area: chat; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .msgs { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-6); display: flex;
+    flex-direction: column; gap: var(--space-4); }
+  .msgs-inner { max-width: 720px; width: 100%; margin: 0 auto; display: flex;
+    flex-direction: column; gap: var(--space-4); }
+
+  /* ---------- Список чатов ---------- */
+  .sidebar { grid-area: side; border-right: var(--hairline); background: var(--surface);
+    display: flex; flex-direction: column; min-height: 0; min-width: 0;
+    padding: var(--space-4); gap: var(--space-3); }
+  .chats { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+  .chat-item { position: relative; display: flex; align-items: center; gap: 4px; min-width: 0;
+    border-radius: var(--r-sm); padding: 8px 6px 8px 10px; cursor: pointer;
+    transition: background var(--dur-2) var(--ease-standard); }
+  .chat-item:hover { background: var(--surface-mist); }
+  .chat-item.on { background: var(--surface-mist); }
+  .chat-item.on::before { content: ""; position: absolute; left: 0; top: 6px; bottom: 6px;
+    width: 3px; border-radius: 0 2px 2px 0; background: var(--accent); }
+  /* Ветка стоит под своим родителем со сдвигом — видно, что это его ответвление. */
+  .chat-item.branch { margin-left: 14px; }
+  .ci-branch { font: 400 11px/15px var(--font-sans); color: var(--accent); }
+  .ci-main { flex: 1; min-width: 0; }
+  .ci-title { font: 500 13px/18px var(--font-sans); color: var(--fg-strong);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ci-title.blank { font-style: italic; font-weight: 400; color: var(--fg-subtle); }
+  .ci-sub { font: 400 11px/15px var(--font-sans); color: var(--fg-subtle);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ci-del { flex: none; border: 0; background: transparent; color: var(--fg-subtle);
+    cursor: pointer; padding: 4px 5px; border-radius: 4px; opacity: 0;
+    font: 500 11px/14px var(--font-sans); display: flex; align-items: center; }
+  .chat-item:hover .ci-del { opacity: 1; }
+  .ci-del:hover { color: var(--danger); background: var(--danger-bg); }
+  .no-chats { font: 400 12px/18px var(--font-sans); color: var(--fg-subtle); padding: 4px 2px; }
+  /* Пока идёт ответ, список не трогаем: переключение чата посреди стрима
+     оставило бы дельты без адресата. */
+  body.locked .sidebar { pointer-events: none; opacity: 0.5; }
+
+  /* ---------- Сообщения ---------- */
+  .turn { display: flex; gap: var(--space-3); }
+  .turn.me { justify-content: flex-end; }
+  .turn .av { flex: none; width: 32px; height: 32px; border-radius: var(--r-sm);
+    background: var(--accent); color: var(--fg-on-brand);
+    display: flex; align-items: center; justify-content: center; }
+  .body { min-width: 0; max-width: 82%; display: flex; flex-direction: column; gap: var(--space-2); }
+  .msg { padding: 12px 14px; font: 400 15px/23px var(--font-sans); overflow-wrap: anywhere; }
+  /* Ответ бота — размеченный markdown; свои сообщения и ошибки остаются текстом. */
+  .msg.s-me, .msg.err { white-space: pre-wrap; }
+  .msg.s-bot { background: var(--surface); border: var(--hairline);
+    border-radius: 18px 18px 18px 4px; color: var(--fg); }
+  .msg.s-me { background: var(--accent); color: var(--fg-on-brand);
+    border-radius: 18px 18px 4px 18px; }
+  /* Отклонённый запрос — такой же пузырь бота, только красный: он приходит и
+     из стрима, и из сохранённой истории, вид должен быть один. */
+  .msg.err { background: var(--danger-bg); border: 1px solid var(--danger);
+    border-radius: 18px 18px 18px 4px; color: var(--danger); }
+  .msg code, .msg pre { font-family: var(--font-mono); font-size: 0.9em; }
+  .md > :first-child { margin-top: 0; }
+  .md > :last-child { margin-bottom: 0; }
+  .md p { margin: 0 0 8px; }
+  .md ul, .md ol { margin: 8px 0; padding-left: 20px; }
+  .md li { margin: 2px 0; }
+  .md h4 { margin: 12px 0 6px; font: 600 15px/22px var(--font-sans); color: var(--fg-strong); }
+  .md strong { font-weight: 600; }
+  .md hr { border: 0; border-top: var(--hairline); margin: 12px 0; }
+  .md code { background: var(--surface-alt); padding: 1px 4px; border-radius: 4px; }
+  .md pre { margin: 8px 0; padding: 10px 12px; background: var(--surface-alt);
+    border: var(--hairline); border-radius: var(--r-sm);
+    white-space: pre; overflow-x: auto; }
+  .md pre code { background: none; padding: 0; }
+
+  .reasoning { border: var(--hairline); border-radius: var(--r-sm); background: var(--surface-alt); }
+  .reasoning > summary { list-style: none; cursor: pointer; padding: 8px 12px;
+    font: 500 12px/16px var(--font-sans); color: var(--fg-subtle); }
+  .reasoning > summary::-webkit-details-marker { display: none; }
+  .reasoning > summary::before { content: "›"; display: inline-block; width: 12px;
+    transition: transform var(--dur-2) var(--ease-standard); }
+  .reasoning[open] > summary::before { transform: rotate(90deg); }
+  .reasoning .r-text { padding: 0 12px 10px; font: 400 13px/20px var(--font-sans);
+    color: var(--fg-subtle); white-space: pre-wrap; overflow-wrap: anywhere;
+    max-height: 260px; overflow-y: auto; }
+
+  .meta { font: 400 12px/16px var(--font-sans); color: var(--fg-subtle);
+    font-variant-numeric: tabular-nums; }
+  /* Пузырь с ошибкой переполнения — бейдж над ним, а не внутри текста:
+     сама ошибка провайдера показывается как есть. */
+  .badge { align-self: flex-start; padding: 3px 8px; border-radius: var(--r-xs);
+    background: var(--danger-bg); color: var(--danger);
+    font: 500 11px/15px var(--font-sans); }
+
+  .caret { display: none; width: 7px; height: 15px; margin-left: 2px; vertical-align: -2px;
+    background: var(--accent); animation: blink 1s steps(1) infinite; }
+  .streaming .caret { display: inline-block; }
+  @keyframes blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .caret { animation: none; } }
+
+  .empty { margin: auto; text-align: center; color: var(--fg-subtle);
+    font: 400 15px/23px var(--font-sans); max-width: 380px; }
+
+  /* ---------- Сжатая история ---------- */
+  /* Пересказ висит над лентой, а не внутри неё: он относится ко всему чату
+     и не должен уезжать вверх вместе с прокруткой. */
+  .summary { flex: none; border-bottom: var(--hairline); background: var(--surface-alt); }
+  .summary[hidden] { display: none; }
+  .summary > summary { list-style: none; cursor: pointer; padding: 10px var(--space-6);
+    font: 500 12px/16px var(--font-sans); color: var(--fg-subtle); }
+  .summary > summary::-webkit-details-marker { display: none; }
+  .summary > summary::before { content: "›"; display: inline-block; width: 12px;
+    transition: transform var(--dur-2) var(--ease-standard); }
+  .summary[open] > summary::before { transform: rotate(90deg); }
+  .summary .s-box { padding: 0 var(--space-6) 12px; display: flex; flex-direction: column;
+    gap: 6px; max-height: 220px; overflow-y: auto; }
+  .summary .s-text { font: 400 13px/20px var(--font-sans); color: var(--fg-muted);
+    white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* Разделитель в ленте: выше него история в запрос не уходит — уехала в
+     пересказ или осталась за окном. */
+  .split { display: flex; align-items: center; gap: var(--space-3);
+    font: 400 11px/15px var(--font-sans); color: var(--fg-subtle); }
+  .split::before, .split::after { content: ""; flex: 1; border-top: var(--hairline); }
+  .warn-note { color: var(--warning); }
+
+  /* ---------- Слои памяти ---------- */
+  .fact { display: flex; align-items: baseline; gap: var(--space-2); }
+  .fact .k { flex: none; font: 500 13px/20px var(--font-sans); color: var(--fg-strong); }
+  .fact .v { flex: 1; min-width: 0; font: 400 13px/20px var(--font-sans);
+    color: var(--fg-muted); overflow-wrap: anywhere; }
+  .fact .x { flex: none; border: 0; background: transparent; color: var(--fg-subtle);
+    cursor: pointer; padding: 0 5px; border-radius: 4px; opacity: 0;
+    font: 500 14px/20px var(--font-sans); }
+  .fact:hover .x { opacity: 1; }
+  .fact .x:hover { color: var(--danger); background: var(--danger-bg); }
+  /* Перевод факта в долговременную: тип выбирается тут же, рядом с фактом —
+     решение принимает человек, и выбор должен стоять там, где он смотрит. */
+  .fact .to-lt { flex: none; display: flex; align-items: center; gap: 4px; opacity: 0; }
+  .fact:hover .to-lt, .fact .to-lt:focus-within { opacity: 1; }
+  .mem-select { border: var(--hairline); border-radius: 4px; background: var(--bg);
+    color: var(--fg); font: 400 12px/16px var(--font-sans); padding: 2px 4px; outline: 0;
+    width: auto; }
+  .mem-btn { border: var(--hairline); border-radius: 4px; background: var(--bg);
+    color: var(--fg-strong); font: 500 11px/15px var(--font-sans); padding: 3px 7px;
+    cursor: pointer; white-space: nowrap; }
+  .mem-btn:hover { background: var(--surface-mist); }
+  .mem-btn.no:hover { color: var(--danger); border-color: var(--danger); }
+  /* Тип записи — ярлык слева, чтобы три группы читались без заголовков. */
+  .kind { flex: none; min-width: 62px; padding: 1px 6px; border-radius: var(--r-xs);
+    background: var(--surface-mist); color: var(--fg-subtle);
+    font: 500 11px/17px var(--font-sans); text-align: center; }
+  /* Предложение модели: то же место, но ждёт кнопки — и выглядит иначе. */
+  .fact.pending { padding: 4px 6px; border-radius: var(--r-sm);
+    background: var(--accent-soft); border: 1px solid var(--accent-line); }
+  .fact.pending .to-lt, .fact.pending .x { opacity: 1; }
+  .mem-input { flex: 1; min-width: 60px; border: var(--hairline); border-radius: 4px;
+    background: var(--bg); color: var(--fg); font: 400 12px/16px var(--font-sans);
+    padding: 4px 6px; outline: 0; }
+  .mem-input:focus { border-color: var(--accent); }
+  .mem-add { display: flex; align-items: center; gap: 6px; padding-top: 4px; }
+  .mem-add .mem-select { flex: none; }
+  .mem-empty { font: 400 12px/18px var(--font-sans); color: var(--fg-subtle); }
+  .mem-clear { align-self: flex-start; }
+  .mem-clear[hidden] { display: none; }
+
+  /* ---------- Ветки ---------- */
+  /* Шапка ветки стоит там же, где блоки Summary и Факты: над лентой. */
+  .branch-line { flex: none; padding: 10px var(--space-6); border-bottom: var(--hairline);
+    background: var(--surface-alt); font: 400 12px/16px var(--font-sans); color: var(--fg-subtle); }
+  .branch-line[hidden] { display: none; }
+  .branch-line a { color: var(--accent); cursor: pointer; }
+  .branch-line a:hover { text-decoration: underline; }
+  /* Кнопка ветвления у сообщения: видна на наведении, во время ответа
+     заблокирована вместе со списком чатов. */
+  .fork { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px;
+    border: 0; background: transparent; color: var(--fg-subtle); cursor: pointer;
+    padding: 2px 6px; border-radius: 4px; opacity: 0;
+    font: 500 11px/15px var(--font-sans);
+    transition: opacity var(--dur-2) var(--ease-standard); }
+  .turn.me .fork { align-self: flex-end; }
+  .turn:hover .fork { opacity: 1; }
+  .fork:hover { color: var(--accent); background: var(--surface-mist); }
+  .fork[hidden] { display: none; }
+  body.locked .fork { pointer-events: none; opacity: 0; }
+
+  /* ---------- Композер ---------- */
+  .composer-wrap { position: relative; border-top: var(--hairline); background: var(--surface);
+    padding: var(--space-4) var(--space-6); }
+  /* Кнопка «вниз» висит над композером и появляется, только когда лента
+     прокручена вверх: во время стрима автоскролл наверху не дёргает. */
+  .to-bottom { position: absolute; right: var(--space-6); top: -48px; z-index: 5;
+    width: 36px; height: 36px; border: var(--hairline); border-radius: var(--r-full);
+    background: var(--surface); color: var(--fg-muted); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: color var(--dur-2) var(--ease-standard); }
+  .to-bottom:hover { color: var(--fg-strong); }
+  .to-bottom[hidden] { display: none; }
+  .composer { max-width: 720px; margin: 0 auto; display: flex; align-items: flex-end; gap: var(--space-2);
+    background: var(--bg); border: var(--hairline); border-radius: var(--r-lg); padding: 6px 6px 6px 16px; }
+  .composer:focus-within { border-color: var(--accent); }
+  .composer textarea { flex: 1; border: 0; outline: 0; resize: none; background: transparent;
+    font: 400 15px/23px var(--font-sans); color: var(--fg); padding: 10px 0; max-height: 180px; }
+  .composer textarea::placeholder { color: var(--fg-disabled); }
+  .send { flex: none; width: 40px; height: 40px; border: 0; border-radius: var(--r-full);
+    background: var(--accent); color: var(--fg-on-brand); display: flex; align-items: center;
+    justify-content: center; cursor: pointer; transition: background var(--dur-2) var(--ease-standard); }
+  .send:disabled { background: var(--fg-disabled); cursor: default; }
+  /* Одна строка: подсказка сжимается многоточием, правая группа не рвётся по
+     одному элементу — иначе широкая оценка роняла бы кнопку на вторую строку
+     и низ страницы прыгал бы на каждый ввод. */
+  .tools { max-width: 720px; margin: var(--space-2) auto 0; display: flex;
+    align-items: center; gap: var(--space-3); flex-wrap: nowrap; }
+  .hint { font: 400 12px/16px var(--font-sans); color: var(--fg-subtle); }
+  .tools > .hint { flex: 1; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .tools-right { flex: none; display: flex; align-items: center; gap: var(--space-3);
+    white-space: nowrap; }
+  /* Ширина под «≈ 99 999 ток. · оценка»: число растёт, а раскладка стоит. */
+  .est { font: 500 12px/16px var(--font-sans); color: var(--fg-muted);
+    font-variant-numeric: tabular-nums; min-width: 21ch; text-align: right; }
+  .btn.small { padding: 6px 10px; font: 500 12px/16px var(--font-sans); }
+  .bulk-note { max-width: 720px; margin: var(--space-2) auto 0; color: var(--warning); }
+  .bulk-note[hidden] { display: none; }
+  .tok-input { width: 80px; border: var(--hairline); border-radius: var(--r-sm);
+    background: var(--bg); color: var(--fg); font: 400 12px/16px var(--font-sans);
+    padding: 6px 8px; outline: 0; font-variant-numeric: tabular-nums; }
+  .tok-input:focus { border-color: var(--accent); }
+
+  /* ---------- Панель ---------- */
+  .panel { grid-area: panel; border-left: var(--hairline); background: var(--surface); overflow-y: auto;
+    min-height: 0; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-5); }
+  .panel-head { display: flex; align-items: baseline; justify-content: space-between; }
+  .panel-head h2 { font: 650 18px/24px var(--font-sans); letter-spacing: -0.02em; }
+  .saved { font: 500 12px/16px var(--font-sans); color: var(--success); opacity: 0;
+    transition: opacity var(--dur-2) var(--ease-standard); }
+  .saved.on { opacity: 1; }
+  .saved.bad { color: var(--danger); }
+
+  .field { display: flex; flex-direction: column; gap: var(--space-2); }
+  .field > label { font: var(--fw-medium) var(--t-caption-size)/var(--t-caption-lh) var(--font-sans);
+    letter-spacing: var(--t-caption-tr); text-transform: uppercase; color: var(--fg-subtle); }
+  .field .note { font: 400 12px/16px var(--font-sans); color: var(--fg-subtle); }
+  select {
+    width: 100%; border: var(--hairline); border-radius: var(--r-sm); background: var(--bg);
+    color: var(--fg); font: 400 14px/20px var(--font-sans); padding: 9px 11px; outline: 0;
+  }
+  select:focus { border-color: var(--accent); }
+
+  .field[hidden] { display: none; }
+  .row[hidden] { display: none; }
+  .check { display: flex; align-items: center; gap: var(--space-2); cursor: pointer;
+    font: 400 14px/20px var(--font-sans); color: var(--fg); letter-spacing: normal;
+    text-transform: none; }
+  .check input { flex: none; width: 15px; height: 15px; margin: 0; accent-color: var(--accent); }
+
+  .row { display: flex; align-items: center; gap: var(--space-3); }
+  /* Подпись держит строку, число прижато вправо: поля «хранить последних» и
+     «сжимать каждые» стоят в колонку одинаково. */
+  .row > .hint { flex: 1; }
+  input[type=range] { flex: 1; accent-color: var(--accent); }
+  .value { font: 600 14px/20px var(--font-sans); color: var(--fg-strong);
+    font-variant-numeric: tabular-nums; min-width: 30px; text-align: right; }
+
+  .btn { border: var(--hairline); border-radius: var(--r-sm); background: var(--bg);
+    color: var(--fg-strong); font: 500 13px/18px var(--font-sans); padding: 9px 12px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+    transition: background var(--dur-2) var(--ease-standard); }
+  .btn:hover { background: var(--surface-mist); }
+  .btn.wide { width: 100%; }
+  .btn.accent { background: var(--accent); border-color: transparent; color: var(--fg-on-brand); }
+  .btn.accent:hover { background: var(--accent); filter: brightness(1.08); }
+  .btn.danger { background: var(--danger); border-color: transparent; color: var(--fg-on-dark); }
+  .btn.danger:hover { background: var(--danger); filter: brightness(1.08); }
+  /* Иконка и подпись стоят по центру кнопки: явная ширина и одинаковые
+     поля, иначе flex центрует содержимое внутри случайной ширины. */
+  .btn svg { flex: none; }
+  #new-chat { width: 100%; text-align: center; padding-left: var(--space-3); padding-right: var(--space-3); }
+
+  /* ---------- Окно системного промпта ---------- */
+  .scrim { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center;
+    justify-content: center; padding: var(--space-6);
+    background: rgba(247, 244, 237, 0.6); backdrop-filter: blur(5px); }
+  .scrim[hidden] { display: none; }
+  .dialog { width: min(760px, 100%); display: flex; flex-direction: column; gap: var(--space-4);
+    background: var(--surface); border: var(--hairline); border-radius: var(--r-lg);
+    box-shadow: var(--shadow-lg); padding: var(--space-6); }
+  .dialog h3 { margin: 0; font: 600 20px/28px var(--font-sans); letter-spacing: -0.01em;
+    color: var(--fg-strong); }
+  .dialog textarea { width: 100%; height: 50vh; resize: vertical;
+    border: var(--hairline); border-radius: var(--r-sm); background: var(--bg); color: var(--fg);
+    font: 400 14px/21px var(--font-sans); padding: 12px 14px; outline: 0; }
+  .dialog textarea:focus { border-color: var(--accent); }
+  .dialog p { margin: 0; font: 400 14px/21px var(--font-sans); color: var(--fg-muted); }
+  .dialog.ask { width: min(440px, 100%); }
+  .dialog .actions { display: flex; align-items: center; gap: var(--space-2); }
+  .dialog .actions .gap { flex: 1; }
+
+  .session { border: var(--hairline); border-radius: var(--r-md); background: var(--bg); }
+  .session .r { display: flex; justify-content: space-between; gap: var(--space-3);
+    padding: 10px 12px; border-bottom: var(--hairline);
+    font: 400 13px/18px var(--font-sans); color: var(--fg-muted); }
+  .session .r:last-child { border-bottom: 0; }
+  .session .r[hidden] { display: none; }
+  .session .r b { font-weight: 600; color: var(--fg-strong); font-variant-numeric: tabular-nums; }
+
+  /* ---------- Контекст и график ---------- */
+  .bar { height: 8px; border-radius: var(--r-full); background: var(--surface-mist); overflow: hidden; }
+  .bar > span { display: block; height: 100%; border-radius: var(--r-full);
+    background: var(--brand); transition: width var(--dur-2) var(--ease-standard); }
+  .bar.warn > span { background: var(--warning); }
+  .bar.over > span { background: var(--danger); }
+  .ctx-line { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2);
+    font: 400 12px/16px var(--font-sans); color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+  #ctx-text.over { color: var(--danger); font-weight: 500; }
+  .note.warn { color: var(--warning); }
+  #chart { min-height: 96px; }
+  #chart svg { display: block; }
+
+  /* Узко — список чатов ложится полосой над чатом. */
+  @media (max-width: 1100px) {
+    .main { grid-template-columns: 1fr 320px; grid-template-areas: "side side" "chat panel";
+      grid-template-rows: auto minmax(0, 1fr); }
+    .main.no-side { grid-template-columns: 1fr 320px; }
+    .main.no-panel, .main.no-side.no-panel { grid-template-columns: 1fr 0; }
+    .sidebar { flex-direction: row; align-items: center; gap: var(--space-2);
+      border-right: 0; border-bottom: var(--hairline); padding: var(--space-3) var(--space-4); }
+    .sidebar .btn { flex: none; white-space: nowrap; }
+    .chats { flex-direction: row; overflow-x: auto; overflow-y: hidden; gap: 6px; }
+    .chat-item { flex: none; width: 180px; }
+    .no-chats { white-space: nowrap; }
+  }
+  @media (max-width: 900px) {
+    body { height: auto; overflow: auto; }
+    .main, .main.no-side, .main.no-panel, .main.no-side.no-panel {
+      grid-template-columns: 1fr; grid-template-areas: "side" "chat" "panel";
+      grid-template-rows: auto; }
+    .panel { border-left: 0; border-top: var(--hairline); }
+    .msgs { max-height: none; }
+    /* Узко — правая группа уходит на вторую строку целиком, не по частям. */
+    .tools { flex-wrap: wrap; }
+    .tools > .hint { flex: 1 1 240px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <button class="icon-btn" id="toggle-sidebar" title="Список чатов">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>
+      </svg>
+    </button>
+    <div class="av">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>
+      </svg>
+    </div>
+    <div>
+      <div class="n">Лаборатория</div>
+      <div class="s">учебная среда: роботы, микросхемы, ИИ</div>
+    </div>
+  </div>
+  <div class="top-right">
+    <button class="icon-btn" id="toggle-panel" title="Панель агента">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 4H14"/><path d="M10 4H3"/><path d="M21 12H12"/><path d="M8 12H3"/>
+        <path d="M21 20H16"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/>
+      </svg>
+    </button>
+    <div class="provider">
+      <div class="k">Провайдер</div>
+      <div class="logo" id="logo"></div>
+    </div>
+  </div>
+</header>
+
+<div class="main">
+  <aside class="sidebar">
+    <button class="btn accent" id="new-chat">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 5v14"/><path d="M5 12h14"/>
+      </svg>
+      Новый чат
+    </button>
+    <div class="chats" id="chats"></div>
+  </aside>
+
+  <section class="chat">
+    <div class="branch-line" id="branch-line" hidden></div>
+    <!-- Инспектор памяти: по блоку на слой, в том же порядке, в каком они
+         уходят в запрос. Долговременная общая на приложение, рабочая — этого
+         чата, Summary — форма краткосрочной. -->
+    <details class="summary" id="lt-box">
+      <summary id="lt-head">Долговременная</summary>
+      <div class="s-box">
+        <div id="lt-pending"></div>
+        <div id="lt-list"></div>
+        <div class="mem-add">
+          <select class="mem-select" id="lt-kind"></select>
+          <input class="mem-input" id="lt-key" placeholder="ключ">
+          <input class="mem-input" id="lt-value" placeholder="значение">
+          <button class="mem-btn" id="lt-add">добавить</button>
+        </div>
+        <div class="meta" id="lt-note"></div>
+        <button class="btn small mem-clear" id="lt-clear" hidden
+                title="Стереть все записи долговременной памяти">очистить долговременную</button>
+      </div>
+    </details>
+    <details class="summary" id="working-box">
+      <summary id="working-head">Рабочая</summary>
+      <div class="s-box">
+        <div id="working-list"></div>
+        <div class="meta" id="working-note"></div>
+        <div class="meta warn-note" id="working-warn" hidden></div>
+        <button class="btn small mem-clear" id="working-clear" hidden>очистить рабочую</button>
+      </div>
+    </details>
+    <details class="summary" id="summary-box" hidden>
+      <summary id="summary-head">Summary</summary>
+      <div class="s-box">
+        <div class="s-text" id="summary-text"></div>
+        <div class="meta" id="summary-note"></div>
+        <div class="meta warn-note" id="summary-warn" hidden></div>
+      </div>
+    </details>
+    <div class="msgs" id="msgs"><div class="msgs-inner" id="inner"></div></div>
+    <div class="composer-wrap">
+      <button class="to-bottom" id="to-bottom" title="В конец ленты" hidden>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>
+        </svg>
+      </button>
+      <div class="composer">
+        <textarea id="input" rows="1" placeholder="Напиши сообщение"></textarea>
+        <button class="send" id="send" title="Отправить">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>
+          </svg>
+        </button>
+      </div>
+      <div class="tools">
+        <div class="hint">Enter — отправить, Shift+Enter — перенос строки</div>
+        <div class="tools-right">
+          <div class="est" id="est">≈ 0 ток. · оценка</div>
+          <label class="hint" for="bulk-tokens">≈ токенов</label>
+          <input class="tok-input" type="number" id="bulk-tokens" value="3000" step="500" min="500" max="60000">
+          <button class="btn small" id="bulk" title="Собрать длинный текст для проверки переполнения">Длинный текст</button>
+          <span class="hint" id="scenario-step">шаг 1/12</span>
+          <button class="btn small" id="scenario" title="Вставить следующую реплику сценария «собираем ТЗ»">Сценарий ТЗ</button>
+        </div>
+      </div>
+      <div class="hint bulk-note" id="bulk-note" hidden></div>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <div class="panel-head">
+      <h2>Агент</h2>
+      <span class="saved" id="saved">сохранено</span>
+    </div>
+
+    <div class="field">
+      <label for="provider">Провайдер</label>
+      <select id="provider"></select>
+      <div class="note" id="provider-note"></div>
+    </div>
+
+    <div class="field">
+      <label for="model">Модель</label>
+      <select id="model"></select>
+      <div class="note" id="model-note"></div>
+    </div>
+
+    <div class="field" id="compression-field" hidden>
+      <label class="check" for="compression">
+        <input type="checkbox" id="compression">
+        <span>Сжатие контекста роутером</span>
+      </label>
+      <div class="note">включено — OpenRouter молча выкидывает середину истории, чтобы влезть в окно; выключено — при переполнении придёт ошибка</div>
+    </div>
+
+    <div class="field">
+      <label for="temp">Температура</label>
+      <div class="row">
+        <input type="range" id="temp" min="0" max="2" step="0.1">
+        <span class="value" id="temp-v">0.7</span>
+      </div>
+      <div class="note">0 — предсказуемо, 2 — свободно</div>
+    </div>
+
+    <div class="field">
+      <label for="effort">Рассуждение</label>
+      <select id="effort"></select>
+      <div class="note">Рассуждение считается как токены ответа и оплачивается по цене выхода</div>
+    </div>
+
+    <div class="field">
+      <label for="persona">Личность</label>
+      <select id="persona"></select>
+      <button class="btn wide" id="open-prompt">Системный промпт…</button>
+      <div class="note">Выбор личности подставляет её базовый промпт в этот чат</div>
+    </div>
+
+    <div class="field">
+      <label>Слои памяти в запросе</label>
+      <label class="check" for="layer-long">
+        <input type="checkbox" id="layer-long">
+        <span>Долговременная</span>
+      </label>
+      <label class="check" for="layer-working">
+        <input type="checkbox" id="layer-working">
+        <span>Рабочая</span>
+      </label>
+      <div class="note">Краткосрочная включена всегда, её форму задаёт стратегия. Рабочая память обновляется после каждого ответа, пока она включена</div>
+    </div>
+
+    <div class="field">
+      <label for="strategy">Краткосрочная: стратегия</label>
+      <select id="strategy"></select>
+      <div class="row" id="keep-last-row">
+        <label class="hint" for="keep-last">Хранить последних</label>
+        <input class="tok-input" type="number" id="keep-last" min="1" max="50" step="1" value="6">
+      </div>
+      <div class="row" id="summarize-every-row">
+        <label class="hint" for="summarize-every">Сжимать каждые</label>
+        <input class="tok-input" type="number" id="summarize-every" min="2" max="50" step="1" value="10">
+      </div>
+      <div class="note" id="strategy-note"></div>
+    </div>
+
+    <div class="field">
+      <label>Контекст</label>
+      <div class="bar" id="ctx-bar"><span id="ctx-fill"></span></div>
+      <div class="ctx-line">
+        <span id="ctx-text">—</span>
+      </div>
+      <div class="note" id="ctx-next"></div>
+      <div class="note warn" id="ctx-warn"></div>
+    </div>
+
+    <div class="field">
+      <label>Токены по ходам</label>
+      <div id="chart"></div>
+      <div class="note" id="chart-note">пока нет ответов</div>
+    </div>
+
+    <div class="field">
+      <label>Чат</label>
+      <div class="session">
+        <div class="r"><span>Сообщений</span><b id="s-msgs">0</b></div>
+        <div class="r" id="s-rejected-row" hidden><span>Отклонено запросов</span><b id="s-rejected">0</b></div>
+        <div class="r"><span>Токены на входе</span><b id="s-in">0</b></div>
+        <div class="r"><span>Токены на выходе</span><b id="s-out">0</b></div>
+        <div class="r"><span>Стоимость</span><b id="s-cost">—</b></div>
+        <div class="r" id="s-summary-row" hidden><span>Сжатие</span><b id="s-summary">—</b></div>
+        <div class="r" id="s-memory-row" hidden><span>Память</span><b id="s-memory">—</b></div>
+      </div>
+      <div class="note">Считается по метрикам, сохранённым у ответов этого чата</div>
+    </div>
+  </aside>
+</div>
+
+<div class="scrim" id="prompt-modal" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="prompt-title">
+    <h3 id="prompt-title">Системный промпт</h3>
+    <textarea id="prompt"></textarea>
+    <div class="actions">
+      <button class="btn" id="reset-prompt">Вернуть базовый</button>
+      <div class="gap"></div>
+      <button class="btn" id="prompt-cancel">Отмена</button>
+      <button class="btn accent" id="prompt-save">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="delete-modal" hidden>
+  <div class="dialog ask" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+    <h3 id="delete-title">Удалить чат</h3>
+    <p id="delete-text"></p>
+    <div class="actions">
+      <div class="gap"></div>
+      <button class="btn" id="delete-cancel">Отмена</button>
+      <button class="btn danger" id="delete-ok">Удалить</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const inner = $('inner'), msgs = $('msgs'), input = $('input'), send = $('send');
+
+let providers = [];
+let personas = [];
+let strategies = [];
+let kinds = [];
+let chats = [];
+// Промпт открытого чата. Живёт в переменной, а не в textarea окна: окно
+// правит черновик, и «Отмена» должна оставлять настройки чата как были.
+let systemPrompt = '';
+let activeId = null;
+let busy = false;
+const logos = {};
+// История открытого чата целиком, вместе с метриками ответов: панель, полоса
+// контекста и график считаются по ней, а не по тому, что видела эта страница.
+let history = [];
+// Символов на токен: калибруется сервером по последнему запросу и приезжает
+// в файле чата. До первого ответа считать не по чему — берём умолчание.
+const DEFAULT_CPT = 3.0;
+let charsPerToken = null;
+// Пересказ открытого чата и накопительный счёт самих суммаризаций. Лежит в
+// файле чата, поэтому переживает и F5, и перезапуск сервера.
+const NO_SUMMARY = { summary: null, covers: 0, prompt_tokens: 0, completion_tokens: 0, cost: 0 };
+let summaryState = { ...NO_SUMMARY };
+// Рабочая память открытого чата и накопительный счёт служебных вызовов памяти.
+// Лежит в своём файле (`data/working/<id>.json`), а не в файле чата.
+const NO_WORKING = { facts: [], prompt_tokens: 0, completion_tokens: 0, cost: 0 };
+let working = { ...NO_WORKING };
+// Долговременная память — одна на всё приложение, поэтому приезжает с
+// /api/state и при смене чата не перечитывается. `pending` — предложения
+// служебного вызова, которые ждут кнопки человека.
+let longTerm = { entries: [], pending: [] };
+// Идёт ли прямо сейчас служебный вызов памяти: ответ уже на экране, а память
+// ещё обновляется, и композер до её записи заблокирован.
+let memoryPending = false;
+// Откуда отпочковался открытый чат: id родителя и индекс сообщения в нём.
+const NO_BRANCH = { parent: null, at: null };
+let branchState = { ...NO_BRANCH };
+
+const BOT_GLYPH = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/>
+  <path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>`;
+
+const FORK_GLYPH = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="8" r="3"/>
+  <path d="M6 9v6"/><path d="M18 11a6 6 0 0 1-6 6H9"/></svg>`;
+
+const TRASH_GLYPH = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+  <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`;
+
+/* ---------- Markdown ---------- */
+// Модель отвечает markdown-ом. Разметку разбираем сами: текст сначала полностью
+// экранируется, дальше по нему ходит парсер — в DOM не попадает ни один символ
+// разметки от модели, только теги, которые собрали здесь.
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Инлайн-разметка внутри уже экранированной строки. Код прячем в плейсхолдеры,
+// чтобы ** и _ внутри `кода` остались символами.
+function inlineMd(s) {
+  const code = [];
+  s = s.replace(/`([^`]+)`/g, (_, c) => `\u0000${code.push(c) - 1}\u0000`);
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/(^|[^*])\*([^\s*][^*\n]*?[^\s*]|[^\s*])\*/g, '$1<em>$2</em>');
+  s = s.replace(/(^|[^\w_])_([^_\n]+)_(?![\w_])/g, '$1<em>$2</em>');
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${code[i]}</code>`);
+}
+
+function renderMarkdown(text) {
+  const lines = escapeHtml(String(text == null ? '' : text)).replace(/\r\n?/g, '\n').split('\n');
+  const out = [];
+  let para = [];
+  let list = null; // { tag, items }
+
+  const flushPara = () => {
+    if (para.length) out.push(`<p>${inlineMd(para.join('<br>'))}</p>`);
+    para = [];
+  };
+  const flushList = () => {
+    if (list) out.push(`<${list.tag}>` + list.items.map(i => `<li>${inlineMd(i)}</li>`).join('') + `</${list.tag}>`);
+    list = null;
+  };
+  const flush = () => { flushPara(); flushList(); };
+  const item = (tag, body) => {
+    flushPara();
+    if (list && list.tag !== tag) flushList();
+    if (!list) list = { tag, items: [] };
+    list.items.push(body);
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      flush();
+      const buf = [];
+      for (i++; i < lines.length && !/^\s*```/.test(lines[i]); i++) buf.push(lines[i]);
+      out.push(`<pre><code>${buf.join('\n')}</code></pre>`);
+      continue;
+    }
+    if (!line.trim()) { flush(); continue; }
+    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { flush(); out.push('<hr>'); continue; }
+
+    const head = line.match(/^\s*#{1,3}\s+(.+?)\s*#*$/);
+    if (head) { flush(); out.push(`<h4>${inlineMd(head[1])}</h4>`); continue; }
+
+    const bullet = line.match(/^\s*[-*•]\s+(.+)$/);
+    if (bullet) { item('ul', bullet[1]); continue; }
+
+    const numbered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (numbered) { item('ol', numbered[1]); continue; }
+
+    flushList();
+    para.push(line.trim());
+  }
+  flush();
+  return out.join('');
+}
+
+/* ---------- Отрисовка ленты ---------- */
+
+function showEmpty() {
+  const text = activeId
+    ? 'Чат пустой. Спроси что-нибудь — вопрос и ответ лягут на диск, и после перезапуска разговор продолжится с этого места.'
+    : 'Начни новый чат: напиши вопрос внизу или нажми «Новый чат» слева.';
+  inner.innerHTML = '';
+  const box = document.createElement('div');
+  box.className = 'empty';
+  box.textContent = text;
+  inner.append(box);
+}
+
+// Кнопка «ветка отсюда». `at` — индекс сообщения в истории: по нему сервер
+// и режет копию. У реплики, которая ещё стримится, индекса нет — кнопка
+// появится, когда ответ ляжет в историю.
+function forkButton(at) {
+  const button = document.createElement('button');
+  button.className = 'fork';
+  button.title = 'Ветка отсюда: копия чата по это сообщение включительно';
+  button.innerHTML = FORK_GLYPH + '<span>ветка</span>';
+  setForkAt(button, at);
+  return button;
+}
+
+function setForkAt(button, at) {
+  button.hidden = at == null;
+  if (at != null) button.dataset.at = at;
+}
+
+function userTurn(text, at) {
+  const turn = document.createElement('div');
+  turn.className = 'turn me';
+  const body = document.createElement('div');
+  body.className = 'body';
+  const msg = document.createElement('div');
+  msg.className = 'msg s-me';
+  msg.textContent = text;
+  body.append(msg, forkButton(at));
+  turn.append(body);
+  return turn;
+}
+
+function botTurn(at) {
+  const turn = document.createElement('div');
+  turn.className = 'turn';
+  const av = document.createElement('div');
+  av.className = 'av';
+  av.innerHTML = BOT_GLYPH;
+  const body = document.createElement('div');
+  body.className = 'body';
+  const msg = document.createElement('div');
+  msg.className = 'msg s-bot';
+  const text = document.createElement('span');
+  text.className = 'md';
+  const caret = document.createElement('span');
+  caret.className = 'caret';
+  msg.append(text, caret);
+  const fork = forkButton(at);
+  body.append(msg);
+  turn.append(av, body);
+  return { turn, body, msg, text, caret, fork };
+}
+
+// Ответ перерисовывается целиком на каждый delta: тексты короткие, а частичный
+// markdown иначе не собрать. Курсор переносим внутрь последнего блока, чтобы он
+// мигал в конце строки, а не под ней.
+function paintBot(bot, text) {
+  bot.text.innerHTML = renderMarkdown(text);
+  const last = bot.text.lastElementChild;
+  if (last && last.tagName !== 'PRE' && last.tagName !== 'HR') last.append(bot.caret);
+  else bot.msg.append(bot.caret);
+}
+
+// Тот же детектор, что и на сервере (`is_context_overflow` в agent.rs): у
+// сохранённой записи флага нет, а бейдж нужен и после F5.
+function isOverflow(text) {
+  const t = String(text == null ? '' : text).toLowerCase();
+  return t.includes('maximum context length')
+    || t.includes('context_length_exceeded')
+    || t.includes('too many tokens')
+    || ((t.includes('context') || t.includes('tokens')) && (t.includes('exceed') || t.includes('limit')));
+}
+
+// Отклонённый запрос: красный пузырь с текстом ошибки как есть, бейдж над ним
+// и размер отклонённого сообщения под ним. Запись лежит в файле чата, поэтому
+// пузырь возвращается и после F5, и при переключении чатов.
+function errorTurn(m) {
+  const turn = document.createElement('div');
+  turn.className = 'turn';
+  const av = document.createElement('div');
+  av.className = 'av';
+  av.innerHTML = BOT_GLYPH;
+  const body = document.createElement('div');
+  body.className = 'body';
+  if (isOverflow(m.content)) {
+    const badge = document.createElement('div');
+    badge.className = 'badge';
+    badge.textContent = 'контекст превышен';
+    body.append(badge);
+  }
+  const msg = document.createElement('div');
+  msg.className = 'msg err';
+  msg.textContent = m.content;
+  body.append(msg);
+  if (m.attempted_tokens != null) {
+    const line = document.createElement('div');
+    line.className = 'meta';
+    line.textContent =
+      `сообщение на ≈ ${num(m.attempted_tokens)} ток. (${num(m.attempted_chars || 0)} символов) отклонено`;
+    body.append(line);
+  }
+  turn.append(av, body);
+  return turn;
+}
+
+function addReasoning(body, msg) {
+  const details = document.createElement('details');
+  details.className = 'reasoning';
+  details.open = true; // пока стримится — видно; после ответа свернём
+  const summary = document.createElement('summary');
+  summary.textContent = 'Рассуждение';
+  const text = document.createElement('div');
+  text.className = 'r-text';
+  details.append(summary, text);
+  body.insertBefore(details, msg);
+  return { details, summary, text };
+}
+
+/* ---------- Сжатая история ---------- */
+
+// Тот же текст, что собирает сервер (`summary_message` в agent.rs): по нему
+// страница считает, сколько символов ушло в запрос.
+function summaryMessage(text, covers) {
+  return `Краткое содержание предыдущего разговора (сообщения 1–${covers}):\n${text}`;
+}
+
+function strategy() { return $('strategy').value; }
+
+function strategyLabel(id) {
+  const found = strategies.find(s => s.id === id);
+  return found ? found.label : id;
+}
+
+function keepLast() { return clampInt($('keep-last').value, 1, 50, 6); }
+
+function renderSummary() {
+  const box = $('summary-box');
+  const s = summaryState;
+  // Без пересказа блок виден только тогда, когда в нём висит предупреждение
+  // о неудавшемся сжатии.
+  box.hidden = !s.summary && $('summary-warn').hidden;
+  if (!s.summary) return;
+  const on = strategy() === 'summary';
+  $('summary-head').textContent = on ? 'Summary' : 'Summary · не используется';
+  $('summary-text').textContent = s.summary;
+  const tokens = s.prompt_tokens + s.completion_tokens;
+  $('summary-note').textContent =
+    `покрывает сообщения 1–${num(s.covers)} · сжатие: ${num(tokens)} ток. · $${s.cost.toFixed(4)}`
+    + (on ? '' : ` · не используется (стратегия: ${strategyLabel(strategy())})`);
+}
+
+// Те же тексты, что собирает сервер (`working_message` и `long_term_message` в
+// agent.rs): по ним страница считает, сколько символов ушло в запрос.
+function workingMessage(facts) {
+  return 'Рабочая память задачи:\n' + facts.map(f => `- ${f.key}: ${f.value}`).join('\n');
+}
+
+function longTermMessage(entries) {
+  const lines = [];
+  for (const kind of kinds) {
+    const group = entries.filter(e => e.kind === kind.id);
+    if (!group.length) continue;
+    lines.push(kind.group + ':');
+    for (const e of group) lines.push(`- ${e.key}: ${e.value}`);
+  }
+  return 'Долговременная память (о пользователе и общие решения):\n' + lines.join('\n');
+}
+
+function layerOn(name) { return $(name === 'long_term' ? 'layer-long' : 'layer-working').checked; }
+
+function kindLabel(id) {
+  const found = kinds.find(k => k.id === id);
+  return found ? found.label : id;
+}
+
+// Строка факта или записи: ключ, значение и кнопки. Кнопки у слоёв разные,
+// поэтому они передаются готовыми — общая только раскладка строки.
+function memoryRow(key, value, buttons, extra) {
+  const row = document.createElement('div');
+  row.className = 'fact' + (extra ? ' ' + extra : '');
+  const k = document.createElement('span');
+  k.className = 'k';
+  k.textContent = key + ':';
+  const v = document.createElement('span');
+  v.className = 'v';
+  if (typeof value === 'string') v.textContent = value; else v.append(value);
+  row.append(k, v, ...buttons);
+  return row;
+}
+
+// Селект типа записи: три варианта из справочника сервера.
+function kindSelect(value) {
+  const select = document.createElement('select');
+  select.className = 'mem-select';
+  select.innerHTML = kinds.map(k => `<option value="${k.id}">${k.label}</option>`).join('');
+  if (value) select.value = value;
+  return select;
+}
+
+function renderWorking() {
+  const facts = working.facts;
+  const on = layerOn('working');
+  $('working-head').textContent = 'Рабочая · ' + (facts.length ? num(facts.length) : 'пусто')
+    + (on ? '' : ' · выключена');
+
+  const list = $('working-list');
+  list.innerHTML = '';
+  if (!facts.length) {
+    const empty = document.createElement('div');
+    empty.className = 'mem-empty';
+    empty.textContent = 'Пока пусто. Факты задачи появятся здесь после первого ответа.';
+    list.append(empty);
+  }
+  facts.forEach((fact, i) => {
+    // Перевод в долговременную: тип выбирается тут же. Кнопка «×» забывает
+    // факт — модель иногда запоминает лишнее.
+    const box = document.createElement('span');
+    box.className = 'to-lt';
+    const select = kindSelect(null);
+    select.dataset.index = i;
+    const promote = document.createElement('button');
+    promote.className = 'mem-btn promote';
+    promote.textContent = '→ долговременная';
+    promote.title = 'Перенести в долговременную память выбранным типом';
+    promote.dataset.index = i;
+    box.append(select, promote);
+
+    const drop = document.createElement('button');
+    drop.className = 'x';
+    drop.title = 'Забыть этот факт';
+    drop.textContent = '×';
+    drop.dataset.index = i;
+    list.append(memoryRow(fact.key, fact.value, [box, drop]));
+  });
+
+  const tokens = working.prompt_tokens + working.completion_tokens;
+  $('working-note').textContent = tokens
+    ? `служебные вызовы памяти: ${num(tokens)} ток. · $${working.cost.toFixed(4)}`
+      + (on ? '' : ' · слой выключен, в запрос не идёт')
+    : (on ? 'обновляется отдельным запросом после каждого ответа' : 'слой выключен: в запрос не идёт и не обновляется');
+  // Ответ уже на экране, а память ещё раскладывается по слоям — говорим об
+  // этом прямо: композер до конца вызова заблокирован.
+  if (memoryPending) $('working-note').textContent = 'обновляю память…';
+  $('working-clear').hidden = !facts.length;
+}
+
+function renderLongTerm() {
+  const { entries, pending } = longTerm;
+  const on = layerOn('long_term');
+  $('lt-head').textContent = 'Долговременная · ' + (entries.length ? num(entries.length) : 'пусто')
+    + (pending.length ? ` · ${num(pending.length)} ждут` : '')
+    + (on ? '' : ' · выключена');
+
+  // Предложения сверху: пока по ним не нажали, в памяти их нет.
+  const queue = $('lt-pending');
+  queue.innerHTML = '';
+  for (const item of pending) {
+    const kind = document.createElement('span');
+    kind.className = 'kind';
+    kind.textContent = kindLabel(item.kind);
+    const yes = document.createElement('button');
+    yes.className = 'mem-btn yes';
+    yes.textContent = 'запомнить';
+    yes.dataset.id = item.id;
+    const no = document.createElement('button');
+    no.className = 'mem-btn no';
+    no.textContent = 'нет';
+    no.dataset.id = item.id;
+    const row = memoryRow(item.key, item.value, [yes, no], 'pending');
+    row.prepend(kind);
+    queue.append(row);
+  }
+
+  // Записи: значение правится прямо в строке, тип и ключ — нет. Сменить их —
+  // то же самое, что завести другую запись.
+  const list = $('lt-list');
+  list.innerHTML = '';
+  if (!entries.length) {
+    const empty = document.createElement('div');
+    empty.className = 'mem-empty';
+    empty.textContent = 'Пока пусто. Сюда попадает то, что подтвердили кнопкой или добавили руками.';
+    list.append(empty);
+  }
+  for (const kind of kinds) {
+    for (const item of entries.filter(e => e.kind === kind.id)) {
+      const value = document.createElement('input');
+      value.className = 'mem-input value';
+      value.value = item.value;
+      value.dataset.id = item.id;
+      const drop = document.createElement('button');
+      drop.className = 'x';
+      drop.title = 'Удалить запись';
+      drop.textContent = '×';
+      drop.dataset.id = item.id;
+      const row = memoryRow(item.key, value, [drop]);
+      const mark = document.createElement('span');
+      mark.className = 'kind';
+      mark.textContent = kind.label;
+      row.prepend(mark);
+      list.append(row);
+    }
+  }
+
+  $('lt-note').textContent = on
+    ? 'общая на все чаты: одна и та же память во всех разговорах'
+    : 'слой выключен: записи на месте, но в запрос не идут';
+  $('lt-clear').hidden = !entries.length;
+}
+
+// Шапка ветки: откуда она отпочковалась и ссылка на родителя. Родителя могли
+// удалить — тогда остаётся только строка, без ссылки.
+function renderBranch() {
+  const line = $('branch-line');
+  line.hidden = !branchState.parent;
+  if (!branchState.parent) return;
+  const parent = chats.find(c => c.id === branchState.parent);
+  line.innerHTML = '';
+  line.append(document.createTextNode(
+    `Ветка от чата ${parent ? `«${parent.title || 'Новый чат'}»` : '(удалён)'}`
+    + `, сообщение #${(branchState.at || 0) + 1}`));
+  if (!parent) return;
+  line.append(document.createTextNode(' · '));
+  const link = document.createElement('a');
+  link.textContent = 'перейти к родителю';
+  link.addEventListener('click', () => { if (!busy) openChat(parent.id); });
+  line.append(link);
+}
+
+// Разделитель ставится в ленту по границе того, что уходит провайдеру: у
+// summary — после последнего покрытого сообщения, у окна и фактов — за
+// `keep_last` сообщений до конца. Граница окна скользит, поэтому разделитель
+// пересчитывается на каждое обновление ленты и после каждого ответа.
+function placeDivider() {
+  const old = inner.querySelector('.split');
+  if (old) old.remove();
+  let at = 0;
+  let text = '';
+  if (strategy() === 'summary' && summaryState.summary) {
+    at = summaryState.covers;
+    text = 'выше — история сжата в summary';
+  } else if (strategy() === 'window') {
+    at = history.length - keepLast();
+    text = `выше — не отправляется (окно ${keepLast()})`;
+  }
+  if (!text || at <= 0 || at >= inner.children.length) return;
+  const line = document.createElement('div');
+  line.className = 'split';
+  line.textContent = text;
+  inner.insertBefore(line, inner.children[at]);
+}
+
+// Метрики лежат у каждого ответа в файле чата, поэтому после F5 и после
+// перезапуска строки под ответами восстанавливаются вместе с историей.
+function renderMessages(messages) {
+  if (!messages.length) { showEmpty(); updateJump(); return; }
+  inner.innerHTML = '';
+  let prev = null;
+  messages.forEach((m, at) => {
+    if (m.role === 'user') {
+      inner.append(userTurn(m.content, at));
+      return;
+    }
+    // От отклонённого запроса ветвиться нечему: в ветке он был бы последним
+    // сообщением, а продолжать разговор с него нельзя.
+    if (m.role === 'error') {
+      inner.append(errorTurn(m));
+      return;
+    }
+    const bot = botTurn(at);
+    paintBot(bot, m.content);
+    if (m.metrics) {
+      bot.body.append(metaLine(m.metrics, prev));
+      prev = m.metrics;
+    }
+    bot.body.append(bot.fork);
+    inner.append(bot.turn);
+  });
+  placeDivider();
+  scroll();
+}
+
+function fromBottom() { return msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight; }
+function atBottom() { return fromBottom() < 80; }
+function scroll() { msgs.scrollTop = msgs.scrollHeight; updateJump(); }
+
+// Кнопка «вниз» показывается, когда ленту увели вверх заметно дальше, чем на
+// экран догоняющего автоскролла.
+function updateJump() { $('to-bottom').hidden = fromBottom() < 200; }
+
+/* ---------- Метрики ---------- */
+
+const num = (v, digits = 0) => v.toLocaleString('ru-RU', { maximumFractionDigits: digits });
+
+function cpt() { return charsPerToken > 0 ? charsPerToken : DEFAULT_CPT; }
+
+// Точного токенизатора у нас нет: оценка идёт делением длины на «символов
+// на токен» этого чата. Поэтому рядом с числом всегда стоит «оценка».
+function estimate(text) { return Math.ceil(text.length / cpt()); }
+
+function answers() {
+  return history.filter(m => m.role === 'assistant' && m.metrics).map(m => m.metrics);
+}
+
+// Вклад последнего сообщения человека: вход этого запроса минус вход и выход
+// предыдущего. Всё, что между ними, — ровно новая реплика (плюс служебная
+// разметка ролей). Отрицательная разность значит, что сравнивать нечего.
+function contribution(prev, m) {
+  if (!prev) return null;
+  const delta = m.prompt_tokens - prev.prompt_tokens - prev.completion_tokens;
+  return delta >= 0 ? delta : null;
+}
+
+function metricsLine(m) {
+  const parts = [];
+  parts.push(m.ttft_ms === null ? 'TTFT —' : `TTFT ${num(m.ttft_ms)} мс`);
+  parts.push(`${(m.total_ms / 1000).toFixed(1)} с`);
+  const reasoning = m.reasoning_tokens > 0 ? ` (+${num(m.reasoning_tokens)} рассужд.)` : '';
+  const cached = m.cached_prompt_tokens > 0 ? ` (${num(m.cached_prompt_tokens)} из кэша)` : '';
+  parts.push(`${num(m.prompt_tokens)}${cached} → ${num(m.completion_tokens)} ток.${reasoning}`);
+  parts.push(m.server_tok_s === null ? '— ток/с сервер' : `${num(m.server_tok_s)} ток/с сервер`);
+  parts.push(m.client_tok_s === null ? '— ток/с клиент' : `${num(m.client_tok_s)} ток/с клиент`);
+  parts.push(m.cost_usd === null ? '—' : '$' + m.cost_usd.toFixed(4));
+  if (m.finish_reason && m.finish_reason !== 'stop') parts.push('обрыв: ' + m.finish_reason);
+  // Разбивка по слоям лежит в метриках ответа, поэтому после F5 строка
+  // остаётся на месте. `null` у слоя значит «выключен», а не «пусто».
+  if (m.layers) parts.push(layersLine(m.layers));
+  // Поле есть только у ходов, где стратегия действительно что-то изменила.
+  // Слева — факт из usage, справа — оценка того, что ушло бы без стратегии.
+  if (m.full_history_estimate != null) {
+    const saved = m.full_history_estimate > 0
+      ? Math.round((1 - m.prompt_tokens / m.full_history_estimate) * 100)
+      : 0;
+    // На коротком чате служебный блок бывает длиннее того, что он заменил:
+    // тогда честнее сказать «дороже», чем показать нулевую экономию.
+    const verdict = saved >= 0 ? `сэкономлено ≈ ${saved}%` : `дороже на ≈ ${-saved}%`;
+    // Чем именно заменена история, видно по тому, какая оценка пришла:
+    // у окна служебного блока нет вовсе.
+    const block = m.summary_tokens_estimate != null
+      ? ` + summary ≈ ${num(m.summary_tokens_estimate)} ток.`
+      : '';
+    const sent = m.layers ? m.layers.short_term.items : 0;
+    parts.push(`в запрос: ${num(sent)} реплик${block}`
+      + ` · без стратегии было бы ≈ ${num(m.full_history_estimate)} ток. · ${verdict}`);
+  }
+  return parts.join(' · ');
+}
+
+// Что дал каждый слой в этом запросе. Оценка токенов идёт по калибровке чата,
+// поэтому везде «≈»; выключенный слой честно пишет «выкл.» — это не то же
+// самое, что пустой.
+function layersLine(layers) {
+  const part = (name, stat, unit) => stat
+    ? `${name} ${num(stat.items)} ${unit} ≈ ${num(stat.tokens)} ток.`
+    : `${name} выкл.`;
+  return 'слои в запросе: '
+    + [part('долговременная', layers.long_term, 'записей'),
+       part('рабочая', layers.working, 'фактов'),
+       part('краткосрочная', layers.short_term, 'реплик')].join(' · ');
+}
+
+function metaLine(m, prev) {
+  const el = document.createElement('div');
+  el.className = 'meta';
+  const delta = contribution(prev, m);
+  el.textContent = metricsLine(m) + (delta === null ? '' : ` · новое сообщение ${num(delta)} ток.`);
+  return el;
+}
+
+/* ---------- Панель: чат, контекст, график ---------- */
+
+function currentModel() {
+  const p = providerById($('provider').value);
+  return (p && p.models.find(m => m.id === $('model').value)) || (p && p.models[0]) || null;
+}
+
+function rejected() { return history.filter(m => m.role === 'error'); }
+
+function renderSession() {
+  const list = answers();
+  const priced = list.filter(m => m.cost_usd !== null);
+  const refused = rejected().length;
+  $('s-msgs').textContent = num(history.length - refused);
+  $('s-rejected-row').hidden = refused === 0;
+  $('s-rejected').textContent = num(refused);
+  $('s-in').textContent = num(list.reduce((a, m) => a + m.prompt_tokens, 0));
+  $('s-out').textContent = num(list.reduce((a, m) => a + m.completion_tokens, 0));
+  $('s-cost').textContent = priced.length
+    ? '$' + priced.reduce((a, m) => a + m.cost_usd, 0).toFixed(4)
+    : '—';
+  // Токены сжатия — отдельной строкой: это не разговор, и мешать их с
+  // токенами ответов было бы враньём в счётчиках.
+  const summaryTokens = summaryState.prompt_tokens + summaryState.completion_tokens;
+  $('s-summary-row').hidden = summaryState.prompt_tokens === 0;
+  $('s-summary').textContent = `${num(summaryTokens)} ток. · $${summaryState.cost.toFixed(4)}`;
+  // Память стоит отдельных запросов — и счёт у неё отдельный, свой.
+  const memoryTokens = working.prompt_tokens + working.completion_tokens;
+  $('s-memory-row').hidden = working.prompt_tokens === 0;
+  $('s-memory').textContent = `${num(memoryTokens)} ток. · $${working.cost.toFixed(4)}`;
+}
+
+// Занятый контекст — это prompt_tokens последнего ответа: провайдер посчитал
+// в нём и системный промпт, и всю историю на момент запроса. Ответов ещё нет —
+// остаётся оценка по одному системному промпту.
+function usedTokens() {
+  const list = answers();
+  return list.length ? list[list.length - 1].prompt_tokens : estimate(systemPrompt);
+}
+
+function level(used, limit) {
+  if (!limit) return '';
+  if (used >= limit) return 'over';
+  return used >= limit * 0.75 ? 'warn' : '';
+}
+
+// Последний ход чата — отказ. Тогда полоса красная и говорит, чего не хватило:
+// иначе она показывала бы последний удавшийся запрос, будто ничего не было.
+function lastRejected() {
+  const last = history[history.length - 1];
+  return last && last.role === 'error' ? last : null;
+}
+
+function renderContext() {
+  const model = currentModel();
+  const limit = model ? model.context_window : 0;
+  const used = usedTokens();
+  const refused = lastRejected();
+  const state = refused ? 'over' : level(used, limit);
+  const share = limit ? Math.min(used / limit, 1) : 0;
+
+  $('ctx-bar').className = 'bar' + (state ? ' ' + state : '');
+  $('ctx-fill').style.width = (refused ? 100 : share * 100).toFixed(1) + '%';
+  const head = limit ? `${num(used)} из ${num(limit)}` : `${num(used)} ток.`;
+  $('ctx-text').textContent = refused
+    ? `${head} · последний запрос (≈ ${num(refused.attempted_tokens || 0)} ток.) отклонён`
+    : (limit ? `${head} · ${Math.round(share * 100)}%` : head);
+  $('ctx-text').classList.toggle('over', !!refused);
+
+  const draft = estimate(input.value);
+  $('est').textContent = `≈ ${num(draft)} ток. · оценка`;
+  const max = model ? model.max_tokens : 0;
+  const next = used + draft + max;
+  $('ctx-next').textContent =
+    `оценка следующего запроса ≈ ${num(used)} + ${num(draft)} + ${num(max)} = ${num(next)} ток.`;
+  $('ctx-warn').textContent = limit && next > limit ? 'следующий запрос может не влезть' : '';
+}
+
+// График инлайновым SVG в реальных пикселях: так пунктир лимита не растянет
+// неравномерное масштабирование viewBox.
+const CHART_H = 96;
+
+function renderChart() {
+  const box = $('chart');
+  const list = answers();
+  const model = currentModel();
+  const limit = model ? model.context_window : 0;
+
+  if (!list.length) {
+    box.innerHTML = '';
+    $('chart-note').textContent = 'пока нет ответов';
+    return;
+  }
+
+  const w = Math.max(box.clientWidth || 0, 120);
+  const top = 6;
+  const peak = Math.max(...list.map(m => m.prompt_tokens));
+  // Масштаб — по самому высокому столбцу, но не мельче десятой доли окна:
+  // иначе на коротком чате пара сотен токенов выглядела бы как полное окно.
+  const scale = Math.max(peak, limit * 0.1, 1);
+  const gap = list.length > 1 ? 2 : 0;
+  const bw = Math.max((w - gap * (list.length - 1)) / list.length, 1);
+
+  const bars = list.map((m, i) => {
+    const x = i * (bw + gap);
+    const h = Math.max((m.prompt_tokens / scale) * (CHART_H - top), 1);
+    const state = level(m.prompt_tokens, limit);
+    const fill = state === 'over' ? 'var(--danger)' : state === 'warn' ? 'var(--warning)' : 'var(--brand)';
+    const cost = m.cost_usd === null ? '—' : '$' + m.cost_usd.toFixed(4);
+    const title = `ход ${i + 1} · ${num(m.prompt_tokens)} в / ${num(m.completion_tokens)} из · ${cost}`;
+    return `<rect x="${x.toFixed(1)}" y="0" width="${bw.toFixed(1)}" height="${CHART_H}" fill="var(--brand-soft)" opacity="0.35"/>`
+      + `<rect x="${x.toFixed(1)}" y="${(CHART_H - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}">`
+      + `<title>${title}</title></rect>`;
+  }).join('');
+
+  // Линия лимита рисуется, только если она попадает в масштаб: за его
+  // пределами она превратилась бы в тот же верхний край графика.
+  const y = CHART_H - (limit / scale) * (CHART_H - top);
+  const line = limit && limit <= scale
+    ? `<line x1="0" y1="${y.toFixed(1)}" x2="${w}" y2="${y.toFixed(1)}" stroke="var(--danger)" stroke-width="1" stroke-dasharray="4 3"/>`
+    : '';
+
+  box.innerHTML = `<svg width="${w}" height="${CHART_H}" viewBox="0 0 ${w} ${CHART_H}" role="img" aria-label="Токены на входе по ходам">${bars}${line}</svg>`;
+
+  const priced = list.filter(m => m.cost_usd !== null);
+  const total = priced.length ? '$' + priced.reduce((a, m) => a + m.cost_usd, 0).toFixed(4) : '—';
+  const billed = list.reduce((a, m) => a + m.prompt_tokens + m.completion_tokens, 0);
+  $('chart-note').textContent = `стоимость чата: ${total} · всего оплачено ${num(billed)} ток.`;
+}
+
+function renderPanel() {
+  renderSession();
+  renderContext();
+  renderChart();
+  renderSummary();
+  renderLongTerm();
+  renderWorking();
+  renderBranch();
+  renderScenario();
+}
+
+/* ---------- Список чатов ---------- */
+
+function providerById(id) { return providers.find(p => p.id === id) || providers[0]; }
+
+// Глубина ветвления: ветка ветки сдвигается ещё на шаг. Родителя могли
+// удалить — такой чат считается корневым, как и в порядке списка на сервере.
+function branchDepth(chat) {
+  let depth = 0;
+  let current = chat;
+  while (current && current.parent && depth < 3) {
+    current = chats.find(c => c.id === current.parent);
+    if (current) depth++;
+  }
+  return depth;
+}
+
+function shortDate(iso) {
+  const d = new Date(iso);
+  return isNaN(d) ? '' : d.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+function renderChats() {
+  const box = $('chats');
+  box.innerHTML = '';
+  if (!chats.length) {
+    const hint = document.createElement('div');
+    hint.className = 'no-chats';
+    hint.textContent = 'Чатов пока нет';
+    box.append(hint);
+    return;
+  }
+  for (const c of chats) {
+    // Сервер уже прислал список в нужном порядке (ветки под родителем);
+    // странице остаётся отступ и подпись.
+    const depth = branchDepth(c);
+    const item = document.createElement('div');
+    item.className = 'chat-item' + (c.id === activeId ? ' on' : '') + (depth ? ' branch' : '');
+    item.dataset.id = c.id;
+    if (depth) item.style.marginLeft = (depth * 14) + 'px';
+
+    const main = document.createElement('div');
+    main.className = 'ci-main';
+    const title = document.createElement('div');
+    title.className = 'ci-title' + (c.title ? '' : ' blank');
+    title.textContent = c.title || 'Новый чат';
+    if (depth && c.branch_from != null) {
+      const mark = document.createElement('div');
+      mark.className = 'ci-branch';
+      mark.textContent = `ветка от #${c.branch_from + 1}`;
+      main.append(title, mark);
+    }
+    const sub = document.createElement('div');
+    sub.className = 'ci-sub';
+    sub.textContent = `${providerById(c.provider).label} · ${c.model} · ${shortDate(c.updated_at)}`;
+    // Вторая строка — чтобы короткий и длинный диалоги сравнивались на глаз.
+    const cost = document.createElement('div');
+    cost.className = 'ci-sub';
+    cost.textContent = c.last_prompt_tokens
+      ? `контекст ${num(c.last_prompt_tokens)} · $${c.total_cost_usd.toFixed(3)}`
+      : 'ответов пока нет';
+    if (!main.children.length) main.append(title);
+    main.append(sub, cost);
+
+    // Удаление необратимо, поэтому спрашиваем в том же окне, что и промпт:
+    // confirm() блокирует вкладку и выглядит чужеродно.
+    const del = document.createElement('button');
+    del.className = 'ci-del';
+    del.title = 'Удалить чат';
+    del.innerHTML = TRASH_GLYPH;
+
+    item.append(main, del);
+    box.append(item);
+  }
+}
+
+// Что сделает окно, если нажать «да». Окно одно на всё необратимое — и на
+// удаление чата, и на очистку долговременной памяти: confirm() блокирует
+// вкладку и выглядит чужеродно, а два разных способа спросить одно и то же
+// хуже, чем один.
+let pendingConfirm = null;
+
+function askConfirm(title, text, ok, run) {
+  pendingConfirm = run;
+  $('delete-title').textContent = title;
+  $('delete-text').textContent = text;
+  $('delete-ok').textContent = ok;
+  $('delete-modal').hidden = false;
+  $('delete-ok').focus();
+}
+
+function askDelete(chat) {
+  askConfirm(
+    'Удалить чат',
+    `«${chat.title || 'Новый чат'}», его история и рабочая память будут удалены. Долговременная память останется. Это необратимо.`,
+    'Удалить',
+    () => deleteChat(chat.id));
+}
+
+function closeDelete() {
+  pendingConfirm = null;
+  $('delete-modal').hidden = true;
+}
+
+$('chats').addEventListener('click', async (e) => {
+  const item = e.target.closest('.chat-item');
+  if (!item) return;
+  const id = item.dataset.id;
+  if (!e.target.closest('.ci-del')) {
+    if (id !== activeId) await openChat(id);
+    return;
+  }
+  const chat = chats.find(c => c.id === id);
+  if (chat) askDelete(chat);
+});
+
+/* ---------- Состояние ---------- */
+
+// Логотипы вставляются инлайном, а не через <img>: марки нарисованы
+// currentColor и должны брать цвет из токенов страницы.
+async function loadLogos() {
+  await Promise.all(['cerebras', 'deepseek', 'openrouter'].map(async (id) => {
+    try { logos[id] = await (await fetch(`/static/${id}.svg`)).text(); } catch (e) { logos[id] = ''; }
+  }));
+}
+
+function setLogo(providerId) {
+  const p = providerById(providerId);
+  $('logo').innerHTML = logos[providerId] || '';
+  $('logo').title = p ? p.label : '';
+}
+
+async function refreshState() {
+  const state = await (await fetch('/api/state')).json();
+  providers = state.providers;
+  personas = state.personas;
+  strategies = state.strategies;
+  kinds = state.kinds;
+  chats = state.chats;
+  // Долговременная память общая, поэтому едет вместе с состоянием: её мог
+  // пополнить другой чат, пока этот был открыт.
+  longTerm = state.long_term;
+  $('lt-kind').innerHTML = kinds.map(k => `<option value="${k.id}">${k.label}</option>`).join('');
+  renderChats();
+  return state;
+}
+
+// Настройки для панели, когда открытого чата ещё нет.
+function fallbackSettings() {
+  const p = providers.find(x => x.available) || providers[0];
+  return {
+    provider: p.id,
+    model: p.models[0].id,
+    temperature: 0.7,
+    reasoning: p.reasoning_levels[0].value,
+    persona: personas[0].id,
+    system_prompt: personas[0].prompt,
+    router_compression: false,
+    strategy: 'full',
+    layers: { long_term: true, working: true },
+    keep_last: 6,
+    summarize_every: 10,
+  };
+}
+
+function personaById(id) { return personas.find(p => p.id === id) || personas[0]; }
+
+function fillPersonas(id) {
+  $('persona').innerHTML = personas.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+  $('persona').value = personas.some(p => p.id === id) ? id : personas[0].id;
+}
+
+function fillProviders() {
+  $('provider').innerHTML = providers.map(p =>
+    `<option value="${p.id}"${p.available ? '' : ' disabled'}>${p.label}${p.available ? '' : ' — нет ключа'}</option>`
+  ).join('');
+}
+
+function fillModels(providerId, model) {
+  const p = providerById(providerId);
+  $('model').innerHTML = p.models.map(m => `<option value="${m.id}">${m.label}</option>`).join('');
+  $('model').value = p.models.some(m => m.id === model) ? model : p.models[0].id;
+}
+
+const STRATEGY_NOTES = {
+  full: 'Вся история уходит в каждый запрос: ничего не теряется и ничего не экономится',
+  summary: 'Последние N сообщений уходят как есть, всё, что раньше, — одним summary. Пересказ обновляется, когда сверх хвоста накопилось K сообщений',
+  window: 'В запрос уходят только последние N сообщений, остальное отбрасывается насовсем',
+};
+
+function fillStrategies(value) {
+  $('strategy').innerHTML =
+    strategies.map(s => `<option value="${s.id}">${s.label}</option>`).join('');
+  $('strategy').value = strategies.some(s => s.id === value) ? value : 'full';
+}
+
+// «Хранить последних» нужно двум стратегиям из трёх, «сжимать каждые» —
+// только summary: показывать ручку, которая ни на что не влияет, нечестно.
+function applyStrategyFields() {
+  const value = strategy();
+  $('keep-last-row').hidden = value === 'full';
+  $('summarize-every-row').hidden = value !== 'summary';
+  $('strategy-note').textContent = STRATEGY_NOTES[value] || '';
+}
+
+function fillReasoning(providerId, value) {
+  const p = providerById(providerId);
+  $('effort').innerHTML = p.reasoning_levels.map(r => `<option value="${r.value}">${r.label}</option>`).join('');
+  $('effort').value = p.reasoning_levels.some(r => r.value === value) ? value : p.reasoning_levels[0].value;
+}
+
+function renderNotes() {
+  const p = providerById($('provider').value);
+  $('provider-note').textContent = p.available ? '' : (p.reason || 'провайдер недоступен');
+  // Плагинами сжатия распоряжается только роутер: у прямых провайдеров
+  // переключателю нечем управлять.
+  $('compression-field').hidden = p.id !== 'openrouter';
+
+  const model = p.models.find(m => m.id === $('model').value);
+  if (!model) { $('model-note').textContent = ''; return; }
+  const speed = model.tok_s_hint ? `~${num(model.tok_s_hint)} ток/с` : 'скорость не заявлена';
+  // У OpenRouter прайс-лист под моделью справочный: настоящую цену вызова
+  // он присылает сам, в usage.cost последнего чанка.
+  const price = p.cost_from_api
+    ? 'цена из API'
+    : (model.price_in === null || model.price_out === null
+      ? 'цена —'
+      : `$${model.price_in} / $${model.price_out} за 1M ток.`);
+  $('model-note').textContent =
+    `${speed} · окно ${num(model.context_window)} · ответ ≤ ${num(model.max_tokens)} · ${price}`;
+}
+
+function applySettings(s) {
+  fillProviders();
+  $('provider').value = s.provider;
+  fillModels(s.provider, s.model);
+  fillReasoning(s.provider, s.reasoning);
+  $('temp').value = s.temperature;
+  $('temp-v').textContent = Number(s.temperature).toFixed(1);
+  $('compression').checked = !!s.router_compression;
+  const layers = s.layers || { long_term: true, working: true };
+  $('layer-long').checked = layers.long_term !== false;
+  $('layer-working').checked = layers.working !== false;
+  fillStrategies(s.strategy);
+  $('keep-last').value = s.keep_last;
+  $('summarize-every').value = s.summarize_every;
+  applyStrategyFields();
+  fillPersonas(s.persona);
+  systemPrompt = s.system_prompt;
+  renderNotes();
+  setLogo(s.provider);
+}
+
+const clampInt = (value, lo, hi, fallback) =>
+  Math.min(Math.max(parseInt(value, 10) || fallback, lo), hi);
+
+function currentSettings() {
+  return {
+    provider: $('provider').value,
+    model: $('model').value,
+    temperature: parseFloat($('temp').value),
+    reasoning: $('effort').value,
+    persona: $('persona').value,
+    system_prompt: systemPrompt,
+    router_compression: $('compression').checked,
+    strategy: strategy(),
+    layers: { long_term: $('layer-long').checked, working: $('layer-working').checked },
+    // Границы те же, что проверяет сервер: пустое поле не должно превращать
+    // настройки чата в отказ 400.
+    keep_last: clampInt($('keep-last').value, 1, 50, 6),
+    summarize_every: clampInt($('summarize-every').value, 2, 50, 10),
+  };
+}
+
+// Сервер отдаёт чат и его рабочую память вместе: они лежат в разных файлах,
+// но странице нужны разом.
+function adoptChat(payload, applyPanel = true) {
+  const chat = payload.chat;
+  activeId = chat.id;
+  if (applyPanel) applySettings(chat.settings);
+  else setLogo(chat.settings.provider);
+  history = chat.messages;
+  charsPerToken = chat.chars_per_token;
+  summaryState = {
+    summary: chat.summary || null,
+    covers: chat.summary_covers || 0,
+    prompt_tokens: chat.summary_prompt_tokens || 0,
+    completion_tokens: chat.summary_completion_tokens || 0,
+    cost: chat.summary_cost || 0,
+  };
+  working = payload.working || { ...NO_WORKING };
+  branchState = { parent: chat.parent || null, at: chat.branch_from };
+  $('summary-warn').hidden = true;
+  $('working-warn').hidden = true;
+  renderMessages(history);
+  renderPanel();
+  renderChats();
+}
+
+function forgetChat() {
+  history = [];
+  charsPerToken = null;
+  summaryState = { ...NO_SUMMARY };
+  working = { ...NO_WORKING };
+  branchState = { ...NO_BRANCH };
+  $('summary-warn').hidden = true;
+  $('working-warn').hidden = true;
+  renderPanel();
+}
+
+async function openChat(id) {
+  if (busy) return;
+  const res = await fetch(`/api/chats/${id}`);
+  if (!res.ok) { await refreshState(); return; }
+  adoptChat(await res.json());
+}
+
+// Перечитать открытый чат с диска. Нужен после любого сбоя ответа: что
+// осталось в истории — вопрос без ответа, отказ или всё-таки ответ — знает
+// только файл, и лента должна выглядеть так же, как после F5. Настройки при
+// этом не трогаем — их правит только панель.
+async function refreshChat() {
+  if (!activeId) return;
+  try {
+    const res = await fetch(`/api/chats/${activeId}`);
+    if (!res.ok) return;
+    adoptChat(await res.json(), false);
+  } catch (e) { /* не перечитали — на странице остаётся то, что уже показано */ }
+}
+
+// Чат создаётся лениво: пустая папка не должна плодить чаты, пока человек
+// ничего не написал и ничего не покрутил в панели.
+async function ensureChat(applyPanel = true) {
+  if (activeId) return activeId;
+  const res = await fetch('/api/chats', { method: 'POST' });
+  if (!res.ok) return null;
+  adoptChat(await res.json(), applyPanel);
+  await refreshState();
+  renderChats();
+  return activeId;
+}
+
+// Ветка от сообщения: сервер копирует чат по это сообщение и делает копию
+// открытой. Во время ответа ветвиться нельзя — как и переключать чаты.
+async function branchFrom(at) {
+  if (busy || !activeId) return;
+  const res = await fetch(`/api/chats/${activeId}/branch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ at }),
+  });
+  if (!res.ok) return;
+  const branch = await res.json();
+  await refreshState();
+  adoptChat(branch);
+  input.focus();
+}
+
+// Правка рабочей памяти: счётчики обновлений при этом не трогаются — они уже
+// оплачены, и обнулять их из-за выброшенной строки было бы враньём.
+async function editWorking(url, method = 'DELETE', body = null) {
+  const res = await fetch(url, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : null,
+  });
+  if (!res.ok) return;
+  const data = await res.json();
+  // «→ долговременная» двигает сразу два слоя, поэтому ответ бывает парный.
+  working = data.working || data;
+  if (data.long_term) longTerm = data.long_term;
+  renderWorking();
+  renderLongTerm();
+  renderSession();
+}
+
+// Правка долговременной памяти. Ответ — весь слой целиком: он небольшой, а
+// склеивать его на странице по кусочкам значило бы держать вторую правду.
+async function editLongTerm(url, method, body = null) {
+  const res = await fetch(url, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : null,
+  });
+  if (!res.ok) return false;
+  longTerm = await res.json();
+  renderLongTerm();
+  return true;
+}
+
+async function newChat() {
+  const res = await fetch('/api/chats', { method: 'POST' });
+  if (!res.ok) return;
+  adoptChat(await res.json());
+  await refreshState();
+  renderChats();
+  input.focus();
+}
+
+async function deleteChat(id) {
+  const res = await fetch(`/api/chats/${id}`, { method: 'DELETE' });
+  const next = res.ok ? (await res.json()).active_chat : null;
+  if (id === activeId) {
+    activeId = null;
+    if (next) {
+      await openChat(next);
+    } else {
+      applySettings(fallbackSettings());
+      renderMessages([]);
+      forgetChat();
+    }
+  }
+  await refreshState();
+}
+
+/* ---------- Панель ---------- */
+
+let saveTimer = null;
+let debounceTimer = null;
+
+async function saveSettings() {
+  const settings = currentSettings();
+  const flag = $('saved');
+  // Настройки принадлежат чату, поэтому первый же поворот ручки его создаёт.
+  const id = await ensureChat(false);
+  if (!id) return;
+  try {
+    const res = await fetch(`/api/chats/${id}/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    const text = await res.text();
+    flag.textContent = res.ok ? 'сохранено' : text;
+    flag.classList.toggle('bad', !res.ok);
+  } catch (e) {
+    flag.textContent = 'не сохранено';
+    flag.classList.add('bad');
+  }
+  flag.classList.add('on');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => flag.classList.remove('on'), 1600);
+  setLogo(settings.provider);
+  await refreshState();
+}
+
+function saveSoon(delay) {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(saveSettings, delay);
+}
+
+/* ---------- Окно системного промпта ---------- */
+
+function openPrompt() {
+  const p = personaById($('persona').value);
+  $('prompt-title').textContent = `Системный промпт · ${p.name}`;
+  $('prompt').value = systemPrompt;
+  $('prompt-modal').hidden = false;
+  $('prompt').focus();
+}
+
+function closePrompt() { $('prompt-modal').hidden = true; }
+
+/* ---------- Свёрнутые колонки ---------- */
+
+// localStorage может быть недоступен (приватное окно, запрет на сайт) —
+// тогда колонки просто всегда открыты.
+function readFlag(key) {
+  try { return localStorage.getItem(key) !== '0'; } catch (e) { return true; }
+}
+
+function writeFlag(key, on) {
+  try { localStorage.setItem(key, on ? '1' : '0'); } catch (e) { /* не сохранили — и ладно */ }
+}
+
+const columns = { 'lab.sidebar': readFlag('lab.sidebar'), 'lab.panel': readFlag('lab.panel') };
+
+function applyColumns() {
+  const main = document.querySelector('.main');
+  main.classList.toggle('no-side', !columns['lab.sidebar']);
+  main.classList.toggle('no-panel', !columns['lab.panel']);
+  $('toggle-sidebar').classList.toggle('on', columns['lab.sidebar']);
+  $('toggle-panel').classList.toggle('on', columns['lab.panel']);
+}
+
+function toggleColumn(key) {
+  columns[key] = !columns[key];
+  writeFlag(key, columns[key]);
+  applyColumns();
+  renderChart();
+}
+
+/* ---------- Диалог ---------- */
+
+function lock(on) {
+  busy = on;
+  send.disabled = on;
+  document.body.classList.toggle('locked', on);
+}
+
+async function ask() {
+  const text = input.value.trim();
+  if (!text || busy) return;
+  lock(true);
+  const id = await ensureChat();
+  if (!id) { lock(false); return; }
+  input.value = '';
+  input.style.height = 'auto';
+
+  if (!history.length) inner.innerHTML = '';
+  history.push({ role: 'user', content: text, metrics: null });
+  inner.append(userTurn(text, history.length - 1));
+  renderPanel();
+  placeDivider();
+
+  // Индекс ответа станет известен, когда он ляжет в историю: до этого
+  // ветвиться от него не от чего.
+  const bot = botTurn(null);
+  bot.msg.classList.add('streaming');
+  inner.append(bot.turn);
+  scroll();
+
+  let reasoning = null;
+  let answer = '';
+
+  // Ответ дошёл до конца — но не весь ход: после `done` сервер ещё
+  // раскладывает память по слоям.
+  let answered = false;
+
+  const finish = () => {
+    bot.msg.classList.remove('streaming');
+    memoryPending = false;
+    renderWorking();
+    lock(false);
+    input.focus();
+    refreshState();
+  };
+
+  const fail = async (message) => {
+    renderPanel();
+    bot.msg.classList.add('err');
+    if (!answer) bot.text.textContent = message;
+    if (isOverflow(message)) {
+      const badge = document.createElement('div');
+      badge.className = 'badge';
+      badge.textContent = 'контекст превышен';
+      bot.body.insertBefore(badge, bot.msg);
+    }
+    if (reasoning) reasoning.details.open = false;
+    finish();
+    scroll();
+    // Единственный источник правды про историю — файл на диске. Страница не
+    // угадывает, убрал сервер вопрос без ответа или оставил: перечитываем чат
+    // целиком, чтобы лента и счётчик шага сценария выглядели так же, как после
+    // F5. Настройки при этом не трогаем, lock уже снят в finish().
+    await refreshChat();
+    // Отказа в файле нет (сервер до него не дошёл: 413, 409, обрыв связи) —
+    // значит сообщение об ошибке живёт только на экране, и перерисовка его
+    // стёрла. Возвращаем тот же пузырь обратно в конец ленты.
+    const last = history[history.length - 1];
+    if (!last || last.role !== 'error') {
+      inner.append(bot.turn);
+      scroll();
+    }
+  };
+
+  const handle = (name, data) => {
+    const stick = atBottom();
+    if (name === 'reasoning') {
+      if (!reasoning) reasoning = addReasoning(bot.body, bot.msg);
+      reasoning.text.textContent += data;
+      reasoning.text.scrollTop = reasoning.text.scrollHeight;
+    } else if (name === 'content') {
+      answer += data;
+      paintBot(bot, answer);
+    } else if (name === 'done') {
+      paintBot(bot, answer);
+      bot.body.append(metaLine(data, answers().slice(-1)[0] || null), bot.fork);
+      if (reasoning) {
+        reasoning.summary.textContent = `Рассуждение · ${num(data.reasoning_tokens)} токенов`;
+        reasoning.details.open = false;
+      }
+      // Столько символов реально ушло в запрос: системный промпт, включённые
+      // слои памяти и та часть истории, которую отобрала стратегия, без
+      // отклонённых запросов. Считается здесь, а не до запроса: историю могли
+      // свернуть на этом же ходу, событием `summary` минутой раньше. Рабочая
+      // память берётся та, что была до ответа: обновление приедет позже,
+      // событием `memory`.
+      const withSummary = strategy() === 'summary' && !!summaryState.summary;
+      const tail = withSummary ? history.slice(summaryState.covers)
+        : (strategy() === 'window' ? history.slice(Math.max(history.length - keepLast(), 0)) : history);
+      const blocks = [
+        withSummary ? summaryMessage(summaryState.summary, summaryState.covers) : '',
+        layerOn('long_term') && longTerm.entries.length ? longTermMessage(longTerm.entries) : '',
+        layerOn('working') && working.facts.length ? workingMessage(working.facts) : '',
+      ];
+      const sentChars = systemPrompt.length + blocks.reduce((a, b) => a + b.length, 0)
+        + tail.filter(m => m.role !== 'error').reduce((a, m) => a + m.content.length, 0);
+      history.push({ role: 'assistant', content: answer, metrics: data });
+      setForkAt(bot.fork, history.length - 1);
+      // Та же формула, что и на сервере: он пишет chars_per_token в файл,
+      // страница держит её свежей, не перечитывая чат целиком.
+      if (data.prompt_tokens > 0) charsPerToken = sentChars / data.prompt_tokens;
+      answered = true;
+      // Композер разблокируется не здесь, а по закрытию потока: служебный
+      // вызов памяти идёт после `done`, и следующий вопрос не должен успеть
+      // прочитать рабочую память раньше, чем в неё ляжет это обновление.
+      bot.msg.classList.remove('streaming');
+      memoryPending = layerOn('working');
+      renderPanel();
+      // Граница окна ушла вперёд вместе с ответом — разделитель пересчитываем.
+      placeDivider();
+    } else if (name === 'title') {
+      // Тема приходит после done, одним событием на весь чат: правим список
+      // на месте, чтобы заголовок не ждал следующего /api/state.
+      const item = chats.find(c => c.id === id);
+      if (item) { item.title = data; renderChats(); }
+    } else if (name === 'summary') {
+      // Пересказ приходит до первой дельты ответа: показываем его сразу, не
+      // дожидаясь перезагрузки чата. Счёт сжатия накопительный.
+      summaryState = {
+        summary: data.summary,
+        covers: data.covers,
+        prompt_tokens: summaryState.prompt_tokens + data.prompt_tokens,
+        completion_tokens: summaryState.completion_tokens + data.completion_tokens,
+        cost: summaryState.cost + data.cost,
+      };
+      $('summary-warn').hidden = true;
+      renderSummary();
+      renderSession();
+      placeDivider();
+    } else if (name === 'memory') {
+      // Память приезжает после `done`: она собрана по уже готовому ответу.
+      // Рабочая обновилась сама, долговременная только получила предложения —
+      // записи в ней меняет человек кнопкой.
+      working = {
+        facts: data.working,
+        prompt_tokens: working.prompt_tokens + data.prompt_tokens,
+        completion_tokens: working.completion_tokens + data.completion_tokens,
+        cost: working.cost + data.cost,
+      };
+      longTerm = { ...longTerm, pending: data.pending };
+      $('working-warn').hidden = true;
+      memoryPending = false;
+      renderWorking();
+      renderLongTerm();
+      renderSession();
+      // Новое предложение легко пропустить в свёрнутом блоке — раскрываем.
+      if (data.added > 0) $('lt-box').open = true;
+    } else if (name === 'memory_error') {
+      // Ответ человек уже получил, оба слоя просто остались прежними.
+      const warn = $('working-warn');
+      warn.textContent = 'обновить память не удалось: ' + data.error;
+      warn.hidden = false;
+      memoryPending = false;
+      renderWorking();
+      $('working-box').open = true;
+    } else if (name === 'summary_error') {
+      // Сжать не вышло — ответ всё равно придёт, просто с полной историей.
+      const warn = $('summary-warn');
+      warn.textContent = 'сжать историю не удалось: ' + data.error;
+      warn.hidden = false;
+      $('summary-box').hidden = false;
+      $('summary-box').open = true;
+    } else if (name === 'error') {
+      fail(data.message);
+    }
+    if (stick) scroll(); else updateJump();
+  };
+
+  try {
+    const res = await fetch(`/api/chats/${id}/ask`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) {
+      // 413 приходит от самого axum: тело запроса больше его лимита, до
+      // провайдера такой вопрос вообще не доходит.
+      fail(res.status === 413 ? 'сообщение больше 2 МБ, сервер его не принял'
+                              : `сервер ответил ${res.status}`);
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let cut;
+      while ((cut = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, cut);
+        buf = buf.slice(cut + 2);
+        let name = 'message', payload = null;
+        for (const line of block.split('\n')) {
+          if (line.startsWith('event:')) name = line.slice(6).trim();
+          else if (line.startsWith('data:')) payload = line.slice(5).trim();
+        }
+        // Сбой на одном событии не должен рвать чтение потока: иначе
+        // исключение в обработчике `done` превращает удавшийся ответ в
+        // ошибку, а `facts` и `title` остаются недочитанными.
+        if (payload !== null) {
+          try { handle(name, JSON.parse(payload)); }
+          catch (e) { console.error('sse', name, e); }
+        }
+      }
+    }
+  } catch (e) {
+    console.error('поток ответа оборвался', e);
+    fail('соединение с сервером прервалось: ' + e.message);
+    return;
+  }
+  // Поток закрылся: сервер отработал ход целиком — вместе с памятью и темой.
+  if (answered) finish();
+  else if (busy) fail('поток оборвался без ответа');
+}
+
+/* ---------- Длинный текст ---------- */
+
+// Служебный инструмент для демонстрации: набивает композер предсказуемым
+// текстом нужного объёма, чтобы контекст можно было переполнить за один шаг.
+// Отправляет его человек сам.
+const BULK_SENTENCES = [
+  'Робот проверяет датчик расстояния, сравнивает показания с порогом и записывает результат в журнал.',
+  'Контроллер читает энкодер, пересчитывает угол в радианы и передаёт значение регулятору.',
+  'Оператор задаёт целевую скорость, а регулятор подбирает напряжение на моторе.',
+  'Питание привода отделено от логики, поэтому просадка на моторе не роняет контроллер.',
+  'Цикл управления укладывается в десять миллисекунд, иначе движение становится рваным.',
+  'Журнал пишется в кольцевой буфер, чтобы длинный прогон не занял всю память.',
+  'Перед подачей питания стенд проверяется на замыкание и на свободный ход осей.',
+];
+
+// Потолок на длину набитого текста. Тело запроса у axum ограничено 2 МБ, а
+// «символов на токен» после сжатого роутером ответа может быть завышено —
+// тогда 8 000 «токенов» превращались в мегабайты и сервер отвечал 413.
+const BULK_CHARS_LIMIT = 300000;
+let bulkNoteTimer = 0;
+
+function bulkText(target) {
+  const need = Math.min(target * cpt(), BULK_CHARS_LIMIT);
+  const lines = [];
+  let chars = 0;
+  while (chars < need) {
+    const line = `Абзац ${lines.length + 1}. ${BULK_SENTENCES[lines.length % BULK_SENTENCES.length]}`;
+    lines.push(line);
+    chars += line.length + 2;
+  }
+  lines.push('Подтверди, что получил текст, одним словом.');
+  return { text: lines.join('\n\n'), capped: need >= BULK_CHARS_LIMIT };
+}
+
+/* ---------- Сценарий ТЗ ---------- */
+
+// Один и тот же разговор, чтобы прогнать его в чатах с разными стратегиями и
+// сравнить ответы, а не формулировки. Кнопка только вставляет реплику в
+// композер — отправляет её человек сам. Шаг 12 контрольный: при окне N = 6
+// бюджет, срок и батарея в хвост уже не попадают.
+//
+// Первая реплика нарочно говорит и о задаче, и о самом человеке: по ней видно,
+// как служебный вызов разводит одно в рабочую память, а другое предлагает в
+// долговременную — это и есть маршрутизация в действии.
+const SCENARIO = [
+  'Привет. Я студент-робототехник, отвечай кратко и с формулами, без воды. Помоги собрать ТЗ на робота-курьера для нашего склада. Задавай уточняющие вопросы по одному.',
+  'Склад 2 000 м², ровный бетонный пол, стеллажи с проходами 1.4 м. Возит коробки до 15 кг между зоной приёмки и стеллажами.',
+  'Бюджет на прототип 400 тысяч рублей, срок — 3 месяца. Это жёсткие ограничения.',
+  'Навигация: предпочитаю лидар и SLAM, без магнитной ленты на полу — ленту переклеивать при каждой перестановке стеллажей не хотим.',
+  'Батарея: не тяжелее 2 кг, смена 8 часов, зарядка на док-станции ночью.',
+  'Решили: платформа дифференциальная, два мотор-колеса, скорость до 1 м/с. Зафиксируй как решение.',
+  'Какие датчики безопасности нужны, чтобы не наехать на человека? Людей в зоне много.',
+  'Пусть робот сообщает о статусе в наш WMS по REST. Авторизация — токен. Это договорённость с отделом ИТ.',
+  'Погрузка коробок — вручную кладовщиком, робот только возит. Самостоятельный захват не нужен.',
+  'Добавь ограничение: уровень шума не выше 60 дБ, рядом офис.',
+  'Как будем тестировать прототип перед запуском? Предложи план приёмки.',
+  'Собери итоговое ТЗ: цель, все ограничения (бюджет, срок, батарея, шум), решения, договорённости с ИТ и план приёмки. Проверь, что ничего из сказанного не потерялось.',
+];
+
+// Шаг считается по числу реплик человека в этом чате: в ветке сценарий
+// продолжается с того места, где она отпочковалась.
+function scenarioStep() {
+  return history.filter(m => m.role === 'user').length + 1;
+}
+
+function renderScenario() {
+  const step = scenarioStep();
+  const over = step > SCENARIO.length;
+  $('scenario').disabled = over;
+  $('scenario-step').textContent = over ? 'сценарий пройден' : `шаг ${step}/${SCENARIO.length}`;
+}
+
+/* ---------- Запуск ---------- */
+
+async function boot() {
+  applyColumns();
+  await loadLogos();
+  const state = await refreshState();
+  if (state.active_chat) {
+    await openChat(state.active_chat);
+  } else {
+    applySettings(fallbackSettings());
+    renderMessages([]);
+    forgetChat();
+  }
+}
+
+$('new-chat').addEventListener('click', newChat);
+$('toggle-sidebar').addEventListener('click', () => toggleColumn('lab.sidebar'));
+$('toggle-panel').addEventListener('click', () => toggleColumn('lab.panel'));
+$('provider').addEventListener('change', () => {
+  // Модели и уровни рассуждения у провайдеров свои: значения от прежнего
+  // провайдера новому не подойдут, поэтому сбрасываем на первые.
+  const provider = $('provider').value;
+  fillModels(provider, null);
+  fillReasoning(provider, 'none');
+  renderNotes();
+  renderPanel();
+  saveSettings();
+});
+$('model').addEventListener('change', () => { renderNotes(); renderPanel(); saveSettings(); });
+$('effort').addEventListener('change', saveSettings);
+$('compression').addEventListener('change', saveSettings);
+$('strategy').addEventListener('change', () => {
+  // Смена стратегии ничего из файла не удаляет: пересказ остаётся на месте,
+  // просто помечается неиспользуемым.
+  applyStrategyFields();
+  renderSummary();
+  placeDivider();
+  saveSettings();
+});
+// Галочка слоя действует со следующего запроса и без перезагрузки: заголовки
+// блоков и подписи пересчитываются сразу.
+for (const id of ['layer-long', 'layer-working']) {
+  $(id).addEventListener('change', () => {
+    renderLongTerm();
+    renderWorking();
+    saveSettings();
+  });
+}
+for (const id of ['keep-last', 'summarize-every']) {
+  $(id).addEventListener('input', () => {
+    // Граница окна двигается сразу, не дожидаясь сохранения настроек.
+    placeDivider();
+    saveSoon(400);
+  });
+}
+
+// Ветка от сообщения и удаление фактов — делегированием: обе кнопки живут в
+// списках, которые перерисовываются целиком.
+inner.addEventListener('click', (e) => {
+  const fork = e.target.closest('.fork');
+  if (!fork || fork.dataset.at == null) return;
+  branchFrom(Number(fork.dataset.at));
+});
+// Рабочая память: крестик забывает факт, «→ долговременная» переносит его
+// выбранным типом. Делегированием — список перерисовывается целиком.
+$('working-list').addEventListener('click', (e) => {
+  if (!activeId || busy) return;
+  const drop = e.target.closest('.x');
+  if (drop) { editWorking(`/api/chats/${activeId}/working/${drop.dataset.index}`); return; }
+  const promote = e.target.closest('.promote');
+  if (!promote) return;
+  const kind = promote.parentElement.querySelector('.mem-select').value;
+  editWorking(`/api/chats/${activeId}/working/${promote.dataset.index}/promote`, 'POST', { kind });
+});
+$('working-clear').addEventListener('click', () => {
+  if (!activeId || busy) return;
+  editWorking(`/api/chats/${activeId}/working`);
+});
+
+// Долговременная: «запомнить» и «нет» у предложений, крестик у записей.
+$('lt-pending').addEventListener('click', (e) => {
+  const yes = e.target.closest('.yes');
+  if (yes) { editLongTerm(`/api/long-term/pending/${yes.dataset.id}`, 'POST'); return; }
+  const no = e.target.closest('.no');
+  if (no) editLongTerm(`/api/long-term/pending/${no.dataset.id}`, 'DELETE');
+});
+$('lt-list').addEventListener('click', (e) => {
+  const drop = e.target.closest('.x');
+  if (drop) editLongTerm(`/api/long-term/${drop.dataset.id}`, 'DELETE');
+});
+// Значение правится на месте: change приходит по Enter и по уходу из поля.
+$('lt-list').addEventListener('change', (e) => {
+  const field = e.target.closest('.value');
+  if (!field) return;
+  editLongTerm(`/api/long-term/${field.dataset.id}`, 'POST', { value: field.value });
+});
+$('lt-add').addEventListener('click', async () => {
+  const key = $('lt-key'), value = $('lt-value');
+  if (!key.value.trim() || !value.value.trim()) { key.focus(); return; }
+  const ok = await editLongTerm('/api/long-term', 'POST', {
+    kind: $('lt-kind').value, key: key.value, value: value.value,
+  });
+  if (!ok) return;
+  key.value = '';
+  value.value = '';
+  key.focus();
+});
+// Очистка долговременной — через то же окно подтверждения, что и удаление
+// чата: операция необратима и задевает все чаты.
+$('lt-clear').addEventListener('click', () => askConfirm(
+  'Очистить долговременную память',
+  'Все записи будут удалены во всех чатах. Предложения, ожидающие подтверждения, останутся. Это необратимо.',
+  'Очистить',
+  () => editLongTerm('/api/long-term', 'DELETE')));
+$('scenario').addEventListener('click', () => {
+  const step = scenarioStep();
+  if (step > SCENARIO.length) return;
+  input.value = SCENARIO[step - 1];
+  input.dispatchEvent(new Event('input'));
+  input.focus();
+});
+$('temp').addEventListener('input', () => {
+  $('temp-v').textContent = Number($('temp').value).toFixed(1);
+  saveSoon(400);
+});
+// Личность подставляет свой шаблон в промпт чата: правки прежнего чат
+// не наследует — иначе робототехник договаривал бы за схемотехника.
+$('persona').addEventListener('change', () => {
+  systemPrompt = personaById($('persona').value).prompt;
+  saveSettings();
+});
+$('open-prompt').addEventListener('click', openPrompt);
+$('prompt-cancel').addEventListener('click', closePrompt);
+$('reset-prompt').addEventListener('click', () => {
+  $('prompt').value = personaById($('persona').value).prompt;
+  $('prompt').focus();
+});
+$('prompt-save').addEventListener('click', () => {
+  systemPrompt = $('prompt').value;
+  closePrompt();
+  saveSettings();
+});
+$('prompt-modal').addEventListener('click', (e) => { if (e.target === $('prompt-modal')) closePrompt(); });
+$('delete-cancel').addEventListener('click', closeDelete);
+$('delete-ok').addEventListener('click', async () => {
+  const run = pendingConfirm;
+  closeDelete();
+  if (run) await run();
+});
+$('delete-modal').addEventListener('click', (e) => { if (e.target === $('delete-modal')) closeDelete(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (!$('delete-modal').hidden) closeDelete();
+  else if (!$('prompt-modal').hidden) closePrompt();
+});
+
+send.addEventListener('click', ask);
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); }
+});
+input.addEventListener('input', () => {
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 180) + 'px';
+  renderContext();
+});
+
+$('bulk').addEventListener('click', () => {
+  const field = $('bulk-tokens');
+  const target = Math.min(Math.max(parseInt(field.value, 10) || 3000, 500), 60000);
+  field.value = target;
+  const bulk = bulkText(target);
+  input.value = bulk.text;
+  input.dispatchEvent(new Event('input'));
+  input.focus();
+  const note = $('bulk-note');
+  clearTimeout(bulkNoteTimer);
+  note.hidden = !bulk.capped;
+  if (bulk.capped) {
+    note.textContent = `ограничил ${num(BULK_CHARS_LIMIT)} символами`;
+    bulkNoteTimer = setTimeout(() => { note.hidden = true; }, 3000);
+  }
+});
+
+$('to-bottom').addEventListener('click', () => {
+  msgs.scrollTo({ top: msgs.scrollHeight, behavior: 'smooth' });
+});
+msgs.addEventListener('scroll', updateJump);
+
+// Ширина графика — в пикселях, поэтому его надо перерисовать, когда колонка
+// меняет размер: при ресайзе окна и при сворачивании панели.
+window.addEventListener('resize', () => { renderChart(); updateJump(); });
+
+boot().catch(e => { inner.textContent = 'Не удалось получить состояние агента: ' + e.message; });
+</script>
+</body>
+</html>
