@@ -9,13 +9,14 @@ w1d5/REPORT.md
 # Настройки веб-чата w2d1 (локальное состояние запуска)
 w2d1/settings.json
 
-# Чаты w2d2–w3d2 — локальные данные запуска, а не код
+# Чаты w2d2–w3d3 — локальные данные запуска, а не код
 w2d2/data/
 w2d3/data/
 w2d4/data/
 w2d5/data/
 w3d1/data/
 w3d2/data/
+w3d3/data/
 
 # Rust
 target/
