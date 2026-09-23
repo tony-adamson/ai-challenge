@@ -84,7 +84,17 @@ pub fn has_changes(summary: &Value) -> bool {
 pub async fn cycle(agent: &Agent, http: &reqwest::Client, telegram: Option<&Telegram>,
     mcp_url: &str, state_path: &str) -> Result<bool, String> {
     let mut state = load(state_path);
-    let client = mcp::connect(mcp_url).await?;
+    // Без статуса панель показывала бы прошлое «отправлено», хотя цикл падает.
+    // Время — чтобы было видно, когда упало; период и прошлый дайджест не трогаем.
+    let client = match mcp::connect(mcp_url).await {
+        Ok(client) => client,
+        Err(error) => {
+            state.status = Some(format!("ошибка сбора наблюдений: {error}"));
+            state.sent_at = Some(now_ms());
+            save(state_path, &state);
+            return Err(error);
+        }
+    };
     let collected = async {
         let list = mcp::call(&client, "watch_list", json!({})).await?;
         let mut summaries = Vec::new();
@@ -99,7 +109,15 @@ pub async fn cycle(agent: &Agent, http: &reqwest::Client, telegram: Option<&Tele
         Ok::<_, String>(summaries)
     }.await;
     mcp::close(client).await;
-    let summaries = collected?;
+    let summaries = match collected {
+        Ok(summaries) => summaries,
+        Err(error) => {
+            state.status = Some(format!("ошибка сбора наблюдений: {error}"));
+            state.sent_at = Some(now_ms());
+            save(state_path, &state);
+            return Err(error);
+        }
+    };
     if summaries.is_empty() {
         return Ok(false);
     }
@@ -204,6 +222,29 @@ mod tests {
         assert_eq!(calls[0].1["text"].as_str().unwrap().chars().count(), 4096);
         assert!(calls[0].1["text"].as_str().unwrap().ends_with('…'));
         assert!(calls[0].1.get("parse_mode").is_none());
+    }
+
+    #[tokio::test]
+    async fn unreachable_mcp_is_saved_as_status_without_moving_the_period() {
+        let dir = std::env::temp_dir().join(format!("w4d3-summary-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("summary_state.json").to_string_lossy().into_owned();
+        let before = State { since: BTreeMap::from([(1, "2026-09-01T10:00:00Z".to_string())]),
+            digest: Some("прошлая сводка".into()), sent_at: Some(1), status: Some("отправлено в Telegram".into()) };
+        save(&path, &before);
+        // Agent нужен только как аргумент: до LLM цикл не доходит, ключ фиктивный.
+        if Agent::new().is_err() {
+            std::env::set_var("DEEPSEEK_API_KEY", "test");
+        }
+        let agent = Agent::new().unwrap();
+
+        let error = cycle(&agent, &reqwest::Client::new(), None, "http://127.0.0.1:1/mcp", &path).await.unwrap_err();
+        let after = load(&path);
+        assert!(error.starts_with("MCP"), "{error}");
+        assert_eq!(after.status, Some(format!("ошибка сбора наблюдений: {error}")));
+        assert_eq!(after.since, before.since);
+        assert_eq!(after.digest, before.digest);
+        assert!(after.sent_at > before.sent_at);
     }
 
     #[test]
