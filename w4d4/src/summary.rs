@@ -226,7 +226,7 @@ mod tests {
 
     #[tokio::test]
     async fn unreachable_mcp_is_saved_as_status_without_moving_the_period() {
-        let dir = std::env::temp_dir().join(format!("w4d3-summary-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("w4d4-summary-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("summary_state.json").to_string_lossy().into_owned();
         let before = State { since: BTreeMap::from([(1, "2026-09-01T10:00:00Z".to_string())]),

@@ -220,7 +220,7 @@ mod tests {
     }
 
     fn temp(name: &str) -> String {
-        let dir = std::env::temp_dir().join(format!("w4d3-auth-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("w4d4-auth-{name}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         dir.join("sessions.json").to_string_lossy().into_owned()
     }

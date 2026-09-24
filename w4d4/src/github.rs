@@ -59,7 +59,7 @@ impl Github {
 
     pub fn with_url(api_url: &str) -> Result<Self, String> {
         let client = reqwest::Client::builder()
-            .user_agent("ai-challenge-w4d3/0.1 (https://github.com/tony-adamson/ai-challenge)")
+            .user_agent("ai-challenge-w4d4/0.1 (https://github.com/tony-adamson/ai-challenge)")
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(15))
             .redirect(reqwest::redirect::Policy::none())
