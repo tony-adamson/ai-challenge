@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Шарик — прототип</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #F7F4ED; --surface: #FFFDF8; --surface-alt: #EFEAE1; --border: #DED8CD;
+    --fg: #171717; --fg-muted: #66635C; --fg-subtle: #8B867A;
+    --accent: #8B7CF6; --accent-soft: #F2EEFC; --accent-line: #E6E1FB;
+    --warning: #B7791F;
+    --orb-hi: #B9AEFF; --orb-mid: #8B7CF6; --orb-lo: #6A58E8; --eye: #1C1433;
+    --ease: cubic-bezier(0.2, 0, 0.1, 1);
+    --font: "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  [data-theme="dark"] {
+    --bg: #0F1110; --surface: #181A18; --surface-alt: #22251F; --border: #34382F;
+    --fg: #F4F1EA; --fg-muted: #A8A399; --fg-subtle: #7E7A71;
+    --accent-soft: #221F36; --accent-line: #2F2A4D;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 400 15px/24px var(--font);
+    transition: background .3s var(--ease), color .3s var(--ease); }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px 80px; }
+  h1 { font: 600 20px/28px var(--font); margin: 0 0 4px; }
+  .lead { color: var(--fg-muted); margin: 0 0 20px; font-size: 14px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px; }
+  .bar button { font: 500 13px/20px var(--font); padding: 6px 12px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--fg); cursor: pointer; }
+  .bar button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--fg); }
+  .bar .sep { width: 1px; background: var(--border); margin: 0 4px; }
+  section { background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    padding: 20px; margin-bottom: 20px; }
+  section > h2 { font: 600 12px/16px var(--font); letter-spacing: .06em; text-transform: uppercase;
+    color: var(--fg-subtle); margin: 0 0 16px; }
+
+  /* ---------- Шарик ---------- */
+  .orb { display: inline-block; flex: none; position: relative; cursor: pointer; border: 0; padding: 0;
+    background: none; border-radius: 50%; }
+  .orb svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .orb .body { transform-box: fill-box; transform-origin: 50% 60%; transition: transform .4s var(--ease); }
+  .orb .glow { opacity: 0; transition: opacity .4s var(--ease); }
+  .orb .eyes { transform-box: view-box; transition: transform .35s var(--ease); }
+  .orb .eye { transform-box: fill-box; transform-origin: 50% 50%; transition: transform .12s ease-in; }
+  .orb .body-fill { transition: fill .4s var(--ease); }
+  .orb:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  .orb.blink .eye { transform: scaleY(.08); }
+
+  /* думает: дышит, светится, глаза бродят вверху */
+  .orb[data-state="think"] .body { animation: breathe 2.4s var(--ease) infinite; }
+  .orb[data-state="think"] .glow { opacity: 1; animation: glow 2.4s var(--ease) infinite; }
+  .orb[data-state="think"] .eyes { animation: wander 3.2s var(--ease) infinite; }
+
+  /* инструмент: смотрит вниз, «читает», подскок на каждый вызов */
+  .orb[data-state="tool"] .eyes { transform: translate(-3px, 9px); animation: read 1.6s linear infinite; }
+  .orb[data-state="tool"] .glow { opacity: .6; }
+  .orb.hop .body { animation: hop .45s var(--ease); }
+
+  /* проверяет: щурится */
+  .orb[data-state="check"] .eyes { transform: translate(-4px, 3px); }
+  .orb[data-state="check"] .eye { transform: scaleY(.42); }
+
+  /* перегенерирует: тёплый оттенок, быстрый взгляд в сторону */
+  .orb[data-state="retry"] .body-fill { fill: url(#orb-warm); }
+  .orb[data-state="retry"] .eyes { animation: glance 1.4s var(--ease) infinite; }
+
+  /* готово: спокойно, чуть меньше */
+  .orb[data-state="done"] .body { transform: scale(.94); }
+
+  @keyframes breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.045, 1.03); } }
+  @keyframes glow { 0%,100% { opacity: .35; } 50% { opacity: .9; } }
+  @keyframes wander {
+    0%,100% { transform: translate(0,0); } 25% { transform: translate(5px,-5px); }
+    50% { transform: translate(-7px,-4px); } 75% { transform: translate(2px,-7px); } }
+  @keyframes read { 0% { transform: translate(-7px, 9px); } 45% { transform: translate(3px, 9px); }
+    50% { transform: translate(-7px, 10px); } 100% { transform: translate(-7px, 9px); } }
+  @keyframes hop { 0% { transform: translateY(0) scale(1); } 30% { transform: translateY(-8%) scale(.97,1.04); }
+    60% { transform: translateY(0) scale(1.05,.95); } 100% { transform: translateY(0) scale(1); } }
+  @keyframes glance { 0%,60%,100% { transform: translate(0,0); } 70%,90% { transform: translate(-12px,1px); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .orb *, .orb.hop .body { animation: none !important; }
+  }
+
+  /* ---------- Пустой чат ---------- */
+  .hero { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 40px 0 28px; }
+  .hero .orb { width: 132px; height: 132px; }
+  .hero .hi { font: 600 22px/30px var(--font); }
+  .hero .sub { color: var(--fg-muted); font-size: 14px; margin-top: -8px; }
+
+  /* ---------- Лента ---------- */
+  .feed { display: flex; flex-direction: column; gap: 18px; }
+  .user { align-self: flex-end; max-width: 80%; background: var(--surface-alt); border-radius: 18px;
+    padding: 10px 14px; }
+  .turn { display: flex; gap: 12px; align-items: flex-start; }
+  .turn .orb { width: 32px; height: 32px; margin-top: 2px; }
+  .turn .status { color: var(--fg-muted); font: 500 14px/36px var(--font); min-height: 36px;
+    transition: opacity .2s var(--ease); }
+  .turn .status .muted { color: var(--fg-subtle); font-weight: 400; }
+  .answer p { margin: 6px 0 0; }
+  .answer p:first-child { margin-top: 5px; }
+  .file { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; padding: 6px 12px;
+    border: 1px solid var(--accent-line); background: var(--accent-soft); border-radius: 10px;
+    font: 500 13px/20px var(--font); color: var(--fg); text-decoration: none; }
+
+  /* ---------- Окно размышления ---------- */
+  .scrim { position: fixed; inset: 0; background: rgba(15,17,16,.28); opacity: 0; pointer-events: none;
+    transition: opacity .25s var(--ease); }
+  .sheet { position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100%); background: var(--surface);
+    border-left: 1px solid var(--border);
+    transform: translateX(100%); transition: transform .3s var(--ease); display: flex; flex-direction: column; }
+  body.sheet-open .scrim { opacity: 1; pointer-events: auto; }
+  body.sheet-open .sheet { transform: none; box-shadow: -12px 0 40px rgba(0,0,0,.08); }
+  .sheet header { display: flex; align-items: center; gap: 12px; padding: 16px; border-bottom: 1px solid var(--border); }
+  .sheet header .orb { width: 36px; height: 36px; }
+  .sheet header b { font: 600 15px/20px var(--font); display: block; }
+  .sheet header span { color: var(--fg-subtle); font-size: 12px; line-height: 16px; }
+  .sheet header button { margin-left: auto; border: 0; background: none; font-size: 22px; color: var(--fg-muted); cursor: pointer; }
+  .sheet .scroll { overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  .sheet h3 { font: 600 11px/16px var(--font); letter-spacing: .06em; text-transform: uppercase;
+    color: var(--fg-subtle); margin: 0 0 8px; }
+  .thought { font: 400 13px/21px var(--font); color: var(--fg-muted); white-space: pre-wrap;
+    border-left: 2px solid var(--accent-line); padding-left: 12px; }
+  .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .step { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; font-size: 13px; line-height: 20px; }
+  .step .top { display: flex; gap: 8px; align-items: center; }
+  .step .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); flex: none; }
+  .step.run .dot { background: var(--accent); animation: glow 1.2s var(--ease) infinite; }
+  .step.ok .dot { background: #4F7D55; }
+  .step code { font: 500 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .step .io { color: var(--fg-subtle); font: 400 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace;
+    margin-top: 4px; overflow-wrap: anywhere; }
+  .tokens { color: var(--fg-subtle); font-size: 12px; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <radialGradient id="orb-grad" cx="35%" cy="28%" r="80%">
+      <stop offset="0" stop-color="var(--orb-hi)" style="stop-color:#C3B9FF"/>
+      <stop offset=".55" stop-color="#8B7CF6"/>
+      <stop offset="1" stop-color="#6A58E8"/>
+    </radialGradient>
+    <radialGradient id="orb-warm" cx="35%" cy="28%" r="80%">
+      <stop offset="0" stop-color="#FFD9A8"/>
+      <stop offset=".55" stop-color="#E7A15A"/>
+      <stop offset="1" stop-color="#B7791F"/>
+    </radialGradient>
+    <radialGradient id="orb-glow" cx="50%" cy="50%" r="50%">
+      <stop offset=".55" stop-color="#8B7CF6" stop-opacity=".45"/>
+      <stop offset="1" stop-color="#8B7CF6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <h1>Шарик «Исследователя» — прототип</h1>
+  <p class="lead">Переключай состояния кнопками или запусти «Прогон». Клик по шарику в ленте открывает окно размышления.</p>
+
+  <div class="bar" id="bar">
+    <button data-state="idle" aria-pressed="true">Ждёт</button>
+    <button data-state="think">Думает</button>
+    <button data-state="tool">Инструмент</button>
+    <button data-state="check">Проверяет</button>
+    <button data-state="retry">Перегенерирует</button>
+    <button data-state="done">Готово</button>
+    <span class="sep"></span>
+    <button id="hop">Подскок</button>
+    <button id="run">▶ Прогон</button>
+    <button id="theme">Тёмная тема</button>
+  </div>
+
+  <section>
+    <h2>Пустой чат</h2>
+    <div class="hero">
+      <button class="orb" data-state="idle" aria-label="Исследователь"></button>
+      <div class="hi">Чем займёмся?</div>
+      <div class="sub">Найду проекты, соберу обзор и сохраню отчёт</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Лента</h2>
+    <div class="feed">
+      <div class="user">Найди три Rust-проекта для полнотекстового поиска, сделай обзор и сохрани в файл.</div>
+      <div class="turn">
+        <button class="orb live" data-state="idle" aria-label="Открыть размышление"></button>
+        <div style="flex:1">
+          <div class="status" id="status">Исследователь</div>
+          <div class="answer" id="answer" hidden>
+            <p>Готово. Нашёл три живых проекта: <b>tantivy</b> — движок уровня Lucene, <b>meilisearch</b> — готовый сервер с опечатками и фасетами, <b>sonic</b> — лёгкий индекс для автодополнения.</p>
+            <p>Обзор с плюсами, минусами и датами последних коммитов — в файле.</p>
+            <a class="file" href="#" onclick="return false">📄 rust-search-review.md</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="sheet" id="sheet" aria-label="Размышление">
+  <header>
+    <span class="orb" data-state="idle" style="cursor:default"></span>
+    <div><b>Исследователь</b><span id="sheet-sub">размышление</span></div>
+    <button id="close" aria-label="Закрыть">×</button>
+  </header>
+  <div class="scroll">
+    <div>
+      <h3>Размышление</h3>
+      <div class="thought" id="thought"></div>
+    </div>
+    <div>
+      <h3>Шаги</h3>
+      <ol class="steps" id="steps"></ol>
+    </div>
+    <div class="tokens" id="tokens"></div>
+  </div>
+</aside>
+
+<script>
+const ORB_SVG = `<svg viewBox="0 0 100 100" aria-hidden="true"><circle class="glow" cx="50" cy="52" r="62" fill="url(#orb-glow)"/>
+      <g class="body">
+        <circle class="body-fill" cx="50" cy="50" r="46" fill="url(#orb-grad)"/>
+        <ellipse cx="36" cy="27" rx="13" ry="7" fill="#fff" opacity=".28" transform="rotate(-28 36 27)"/>
+        <g class="eyes">
+          <g transform="rotate(-18 58 35)"><rect class="eye" x="54" y="25" width="8.5" height="21" rx="4.25" fill="#1C1433"/></g>
+          <g transform="rotate(-18 73 33)"><rect class="eye" x="69" y="23" width="8.5" height="21" rx="4.25" fill="#1C1433"/></g>
+        </g>
+      </g></svg>`;
+// Разметка внутри каждого шарика своя: стили не проникают в <use>.
+document.querySelectorAll('.orb').forEach(o => o.innerHTML = ORB_SVG);
+const orbs = () => document.querySelectorAll('.orb');
+const live = document.querySelector('.orb.live');
+const status = document.getElementById('status');
+const answer = document.getElementById('answer');
+const LABEL = {
+  idle: 'Исследователь', think: 'Думает…', tool: 'Ищет на GitHub…',
+  check: 'Сверяет с инвариантами…', retry: 'Переписывает ответ…', done: 'Исследователь',
+};
+
+function setState(state, label) {
+  orbs().forEach(o => o.dataset.state = state);
+  document.querySelectorAll('#bar [data-state]').forEach(b =>
+    b.setAttribute('aria-pressed', String(b.dataset.state === state)));
+  status.innerHTML = label || LABEL[state];
+  status.hidden = state === 'done';
+  answer.hidden = state !== 'done';
+  document.getElementById('sheet-sub').textContent = state === 'done' ? 'размышление · готово' : 'размышление · идёт';
+}
+
+function hop() {
+  orbs().forEach(o => { o.classList.remove('hop'); void o.offsetWidth; o.classList.add('hop'); });
+}
+
+// Моргание в случайный момент, только в спокойных состояниях.
+function scheduleBlink() {
+  setTimeout(() => {
+    orbs().forEach(o => {
+      if (!['idle', 'done', 'think'].includes(o.dataset.state)) return;
+      o.classList.add('blink');
+      setTimeout(() => o.classList.remove('blink'), 130);
+      if (Math.random() < .25) setTimeout(() => {           // иногда двойное
+        o.classList.add('blink'); setTimeout(() => o.classList.remove('blink'), 120);
+      }, 260);
+    });
+    scheduleBlink();
+  }, 2600 + Math.random() * 3200);
+}
+scheduleBlink();
+
+document.getElementById('bar').addEventListener('click', e => {
+  const b = e.target.closest('[data-state]');
+  if (b) { stopRun(); setState(b.dataset.state); }
+});
+document.getElementById('hop').onclick = hop;
+document.getElementById('theme').onclick = e => {
+  const dark = document.documentElement.dataset.theme !== 'dark';
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  e.target.textContent = dark ? 'Светлая тема' : 'Тёмная тема';
+};
+
+// Окно размышления.
+const body = document.body;
+live.onclick = () => body.classList.add('sheet-open');
+document.getElementById('close').onclick = () => body.classList.remove('sheet-open');
+document.getElementById('scrim').onclick = () => body.classList.remove('sheet-open');
+addEventListener('keydown', e => { if (e.key === 'Escape') body.classList.remove('sheet-open'); });
+
+const thought = document.getElementById('thought');
+const steps = document.getElementById('steps');
+const tokens = document.getElementById('tokens');
+function addStep(name, input) {
+  const li = document.createElement('li');
+  li.className = 'step run';
+  li.innerHTML = `<div class="top"><span class="dot"></span><code>${name}</code></div><div class="io">→ ${input}</div>`;
+  steps.append(li);
+  return li;
+}
+function finishStep(li, out) {
+  li.className = 'step ok';
+  li.insertAdjacentHTML('beforeend', `<div class="io">← ${out}</div>`);
+}
+
+// Демо-прогон: цепочка search → summarize → save.
+let timers = [];
+function stopRun() { timers.forEach(clearTimeout); timers = []; }
+function at(ms, fn) { timers.push(setTimeout(fn, ms)); }
+const THOUGHT = 'Нужны три проекта на Rust для полнотекстового поиска. Сначала поиск на GitHub, '
+  + 'потом обзор по найденному — не по памяти, — потом сохранить отчёт. Передаю id результатов, а не пересказ, '
+  + 'чтобы данные дошли до файла без искажений.';
+function type(text, from, speed) {
+  [...text].forEach((ch, i) => at(from + i * speed, () => { thought.textContent += ch; }));
+  return from + text.length * speed;
+}
+document.getElementById('run').onclick = () => {
+  stopRun(); thought.textContent = ''; steps.innerHTML = ''; tokens.textContent = '';
+  setState('think');
+  const t = type(THOUGHT, 200, 18);
+  let s1, s2, s3;
+  at(t + 200, () => { setState('tool', 'Ищет на GitHub… <span class="muted">search_repositories</span>'); hop();
+    s1 = addStep('search_repositories', 'query: "full-text search language:Rust", limit: 3'); });
+  at(t + 2400, () => { finishStep(s1, 'search_id: 7 · 3 репозитория · sha 4f1c…');
+    setState('tool', 'Пишет обзор… <span class="muted">summarize</span>'); hop();
+    s2 = addStep('summarize', 'search_id: 7'); });
+  at(t + 5000, () => { finishStep(s2, 'summary_id: 3 · 1 840 символов · sha 9b2e…');
+    setState('tool', 'Сохраняет файл… <span class="muted">save_to_file</span>'); hop();
+    s3 = addStep('save_to_file', 'summary_id: 3, filename: "rust-search-review.md"'); });
+  at(t + 6600, () => { finishStep(s3, 'reports/rust-search-review.md · sha 9b2e… совпадает');
+    setState('check'); });
+  at(t + 8000, () => { setState('done'); tokens.textContent = '2 310 → 412 ток. (+640 рассужд.) · 3 вызова'; });
+};
+</script>
+</body>
+</html>
