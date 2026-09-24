@@ -1747,6 +1747,38 @@ fn last_exchange(chat: &Chat) -> Option<(String, String)> {
 /// Ответ не-стримового запроса: текст и его `usage`. Формат тот же, что у
 /// стрима, только `message` вместо `delta`. Пустой текст — не пересказ:
 /// возвращаем `None`, и ход просто пойдёт без сжатия.
+/// Одиночный запрос к DeepSeek без стрима: тело запроса и разбор ответа — те
+/// же, что были в `Agent::digest`. Рассуждение выключено, температура 0.3.
+/// Ошибки без префикса процесса: вызывающий добавляет свой контекст сам.
+pub async fn deepseek_once(
+    client: &Client,
+    url: &str,
+    key: &str,
+    system: &str,
+    user: &str,
+    max_tokens: u32,
+) -> Result<String, String> {
+    let body = json!({
+        "model": Provider::DeepSeek.models()[0].id,
+        "messages": [
+            { "role": "system", "content": system },
+            { "role": "user", "content": user },
+        ],
+        "stream": false,
+        "temperature": 0.3,
+        "max_tokens": max_tokens,
+        "thinking": { "type": "disabled" },
+    });
+    let response = client.post(url).bearer_auth(key).json(&body).send().await.map_err(describe)?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("API вернул {status}: {}",
+            api_error(&response.text().await.unwrap_or_default())));
+    }
+    let value: Value = response.json().await.map_err(describe)?;
+    parse_completion(&value).map(|(text, _)| text).ok_or("модель вернула пустой ответ".into())
+}
+
 fn parse_completion(value: &Value) -> Option<(String, Usage)> {
     let text = value["choices"][0]["message"]["content"].as_str()?.trim();
     (!text.is_empty()).then(|| (text.to_string(), usage_from(&value["usage"])))
@@ -2499,27 +2531,15 @@ impl Agent {
     /// на сервере ключ только у него. Ответ не стримится, рассуждение выключено.
     pub async fn digest(&self, summaries: &Value) -> Result<String, String> {
         let provider = Provider::DeepSeek;
-        let key = self.key(provider)?;
-        let body = json!({
-            "model": provider.models()[0].id,
-            "messages": [
-                { "role": "system", "content": DIGEST_PROMPT },
-                { "role": "user", "content": summaries.to_string() },
-            ],
-            "stream": false,
-            "temperature": 0.3,
-            "max_tokens": DIGEST_MAX_TOKENS,
-            "thinking": { "type": "disabled" },
-        });
-        let response = self.client.post(provider.base_url()).bearer_auth(key).json(&body)
-            .send().await.map_err(describe)?;
-        let status = response.status();
-        if !status.is_success() {
-            return Err(format!("дайджест: API вернул {status}: {}",
-                api_error(&response.text().await.unwrap_or_default())));
-        }
-        let value: Value = response.json().await.map_err(describe)?;
-        parse_completion(&value).map(|(text, _)| text).ok_or("дайджест: модель вернула пустой ответ".into())
+        let key = self.key(provider)?.clone();
+        deepseek_once(&self.client, provider.base_url(), &key, DIGEST_PROMPT,
+            &summaries.to_string(), DIGEST_MAX_TOKENS)
+            .await
+            .map_err(|error| match error.as_str() {
+                "модель вернула пустой ответ" => "дайджест: модель вернула пустой ответ".to_string(),
+                _ if error.starts_with("API вернул") => format!("дайджест: {error}"),
+                _ => error,
+            })
     }
 
     /// Модель получает весь каталог нашего MCP-сервера и сама решает, нужен ли вызов.
