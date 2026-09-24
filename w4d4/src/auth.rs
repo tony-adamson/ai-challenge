@@ -331,4 +331,54 @@ mod tests {
         assert!(Auth::new(secret, &temp("init")).is_ok());
         assert!(Auth::new("не base32!", &temp("init")).is_err());
     }
+
+    /// Скачивание отчёта: без сессии 401; с сессией 200 с телом и обоими
+    /// заголовками; кривое имя и выход за папку не читают ничего лишнего.
+    #[tokio::test]
+    async fn report_download_needs_session_and_validates_name() {
+        let dir = std::env::temp_dir().join(format!("w4d4-files-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("ok.md"), "# Привет").unwrap();
+        let path = temp("files");
+        let _ = std::fs::remove_file(&path);
+        let auth = Arc::new(Auth::with_clock(RFC_SECRET, &path, rfc_clock).unwrap());
+        let files = dir.clone();
+        let app = Router::new()
+            .route("/api/files/{name}", get(move |axum::extract::Path(name): axum::extract::Path<String>| {
+                let files = files.clone();
+                async move { crate::report_response(&files, &name) }
+            }))
+            .merge(routes(auth.clone()))
+            .layer(axum::middleware::from_fn_with_state(auth, require));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let http = reqwest::Client::builder().redirect(Policy::none()).build().unwrap();
+
+        assert_eq!(http.get(format!("{base}/api/files/ok.md")).send().await.unwrap().status(), 401);
+        let ok = http.post(format!("{base}/login")).form(&[("code", "287082")]).send().await.unwrap();
+        assert_eq!(ok.status(), 303);
+        let session = ok.headers()["set-cookie"].to_str().unwrap().split(';').next().unwrap().to_string();
+
+        let file = http.get(format!("{base}/api/files/ok.md")).header("cookie", &session).send().await.unwrap();
+        assert_eq!(file.status(), 200);
+        assert_eq!(file.headers()["content-type"], "text/markdown; charset=utf-8");
+        assert_eq!(file.headers()["content-disposition"], "attachment; filename=\"ok.md\"");
+        assert_eq!(file.bytes().await.unwrap().as_ref(), "# Привет".as_bytes());
+        // Имя без `.md` не совпадает с `report_name` побайтово — тоже 400.
+        for bad in ["x.txt", "ok"] {
+            let denied = http.get(format!("{base}/api/files/{bad}")).header("cookie", &session)
+                .send().await.unwrap();
+            assert_eq!(denied.status(), 400, "{bad}");
+        }
+        // Выход за папку: 400 от проверки имени или 404 роутера — без чтения вне папки.
+        let escape = http.get(format!("{base}/api/files/..%2Fsecret")).header("cookie", &session)
+            .send().await.unwrap();
+        assert!(matches!(escape.status().as_u16(), 400 | 404), "{}", escape.status());
+        let missing = http.get(format!("{base}/api/files/missing.md")).header("cookie", &session)
+            .send().await.unwrap();
+        assert_eq!(missing.status(), 404);
+        server.abort();
+    }
 }
