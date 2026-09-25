@@ -399,15 +399,7 @@
     font: 500 13px/20px var(--font-sans); }
   .msg.waiting .phase { display: flex; }
   .msg.waiting .caret { display: none; }
-  .dots { display: inline-flex; gap: 4px; }
-  .dots i { width: 6px; height: 6px; border-radius: var(--r-full); background: var(--accent);
-    opacity: 0.25; animation: pulse 1.2s var(--ease-standard) infinite; }
-  .dots i:nth-child(2) { animation-delay: 0.15s; }
-  .dots i:nth-child(3) { animation-delay: 0.3s; }
   .phase.retry { color: var(--warning); }
-  .phase.retry .dots i { background: var(--warning); }
-  @keyframes pulse { 0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1); } }
-  @media (prefers-reduced-motion: reduce) { .dots i { animation: none; opacity: 0.7; } }
 
   /* Строка «Сверка» — первая строка ответа, свёрнутая в чип над текстом. */
   .sverka { margin: 0 0 8px; border: 1px solid var(--accent-line); background: var(--accent-soft);
@@ -658,9 +650,116 @@
   .mcp-tool h4 { margin: 0 0 8px; overflow-wrap: anywhere; }
   .mcp-tool details { margin-top: 8px; }
   .mcp-tool pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+
+  /* ---------- Шарик «Исследователь» (эталон — docs/orb-prototype.html) ---------- */
+  /* Разметка вставляется инлайном в каждый экземпляр (стили не проходят в
+     <use>); градиенты лежат в одном скрытом <svg><defs> в начале body. */
+  .orb { display: inline-block; flex: none; position: relative; cursor: pointer; border: 0; padding: 0;
+    background: none; border-radius: 50%; }
+  .orb svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .orb .body { transform-box: fill-box; transform-origin: 50% 60%; transition: transform .4s var(--ease-standard); }
+  .orb .glow { opacity: 0; transition: opacity .4s var(--ease-standard); }
+  .orb .eyes { transform-box: view-box; transition: transform .35s var(--ease-standard); }
+  /* Наклон глаз — на обёртке <g transform="rotate…"> в разметке, здесь
+     только CSS-трансформации rect.eye, чтобы моргание не сбрасывало наклон. */
+  .orb .eye { transform-box: fill-box; transform-origin: 50% 50%; transition: transform .12s ease-in; }
+  .orb .body-fill { transition: fill .4s var(--ease-standard); }
+  .orb:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .orb.blink .eye { transform: scaleY(.08); }
+  .turn .orb { width: 32px; height: 32px; margin-top: 2px; }
+  .orb[data-state="think"] .body { animation: orb-breathe 2.4s var(--ease-standard) infinite; }
+  .orb[data-state="think"] .glow { opacity: 1; animation: orb-glow 2.4s var(--ease-standard) infinite; }
+  .orb[data-state="think"] .eyes { animation: orb-wander 3.2s var(--ease-standard) infinite; }
+  .orb[data-state="tool"] .eyes { transform: translate(-3px, 9px); animation: orb-read 1.6s linear infinite; }
+  .orb[data-state="tool"] .glow { opacity: .6; }
+  .orb.hop .body { animation: orb-hop .45s var(--ease-standard); }
+  .orb[data-state="check"] .eyes { transform: translate(-4px, 3px); }
+  .orb[data-state="check"] .eye { transform: scaleY(.42); }
+  .orb[data-state="retry"] .body-fill { fill: url(#orb-warm); }
+  .orb[data-state="retry"] .eyes { animation: orb-glance 1.4s var(--ease-standard) infinite; }
+  .orb[data-state="done"] .body { transform: scale(.94); }
+  @keyframes orb-breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.045, 1.03); } }
+  @keyframes orb-glow { 0%,100% { opacity: .35; } 50% { opacity: .9; } }
+  @keyframes orb-wander { 0%,100% { transform: translate(0,0); } 25% { transform: translate(5px,-5px); } 50% { transform: translate(-7px,-4px); } 75% { transform: translate(2px,-7px); } }
+  @keyframes orb-read { 0% { transform: translate(-7px, 9px); } 45% { transform: translate(3px, 9px); } 50% { transform: translate(-7px, 10px); } 100% { transform: translate(-7px, 9px); } }
+  @keyframes orb-hop { 0% { transform: translateY(0) scale(1); } 30% { transform: translateY(-8%) scale(.97,1.04); } 60% { transform: translateY(0) scale(1.05,.95); } 100% { transform: translateY(0) scale(1); } }
+  @keyframes orb-glance { 0%,60%,100% { transform: translate(0,0); } 70%,90% { transform: translate(-12px,1px); } }
+  @media (prefers-reduced-motion: reduce) { .orb *, .orb.hop .body { animation: none !important; } }
+
+  /* ---------- Пустой чат ---------- */
+  .hero { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 14px;
+    padding: 40px 0 28px; text-align: center; }
+  .hero .orb { width: 132px; height: 132px; cursor: default; }
+  .hero .hi { font: 600 22px/30px var(--font-sans); color: var(--fg-strong); }
+  .hero .sub { color: var(--fg-muted); font: 400 14px/20px var(--font-sans); }
+
+  /* ---------- Чип файла под ответом ---------- */
+  .file { display: inline-flex; align-self: flex-start; align-items: center; gap: 8px;
+    padding: 6px 12px; border: 1px solid var(--accent-line); background: var(--accent-soft);
+    border-radius: var(--r-sm); font: 500 13px/20px var(--font-sans);
+    color: var(--fg-strong); text-decoration: none; }
+
+  /* ---------- Окно «Размышление»: лист справа поверх приложения + scrim ---------- */
+  /* Имена свои (.orb-scrim/.orb-sheet): общий .scrim занят модалками, а drawer
+     «Контекст» эта фаза не трогает. */
+  .orb-scrim { position: fixed; inset: 0; z-index: 30; background: rgba(15,17,16,.28);
+    opacity: 0; pointer-events: none; transition: opacity .25s var(--ease-standard); }
+  .orb-sheet { position: fixed; top: 0; right: 0; bottom: 0; z-index: 31; width: min(420px, 100%);
+    background: var(--surface); border-left: var(--hairline);
+    transform: translateX(100%); transition: transform .3s var(--ease-standard);
+    display: flex; flex-direction: column; }
+  body.orb-open .orb-scrim { opacity: 1; pointer-events: auto; }
+  body.orb-open .orb-sheet { transform: none; box-shadow: var(--shadow-lg); }
+  .orb-sheet header { display: flex; align-items: center; gap: 12px; padding: 16px;
+    border-bottom: var(--hairline); }
+  .orb-sheet header .orb { width: 36px; height: 36px; cursor: default; }
+  .orb-sheet header b { font: 600 15px/20px var(--font-sans); display: block; color: var(--fg-strong); }
+  .orb-sheet header span { color: var(--fg-subtle); font: 400 12px/16px var(--font-sans); }
+  .orb-sheet header button { margin-left: auto; border: 0; background: none; font-size: 22px;
+    color: var(--fg-muted); cursor: pointer; }
+  .orb-sheet .scroll { overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  .orb-sheet h3 { font: 600 11px/16px var(--font-sans); letter-spacing: .06em; text-transform: uppercase;
+    color: var(--fg-subtle); margin: 0 0 8px; }
+  .thought { font: 400 13px/21px var(--font-sans); color: var(--fg-muted); white-space: pre-wrap;
+    overflow-wrap: anywhere; border-left: 2px solid var(--accent-line); padding-left: 12px; }
+  .thought:empty::before { content: "Рассуждения пока нет."; color: var(--fg-subtle); }
+  .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .step { border: var(--hairline); border-radius: var(--r-sm); padding: 8px 12px;
+    font: 400 13px/20px var(--font-sans); }
+  .step .top { display: flex; gap: 8px; align-items: center; }
+  .step .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border-strong); flex: none; }
+  .step.run .dot { background: var(--accent); animation: orb-glow 1.2s var(--ease-standard) infinite; }
+  .step.ok .dot { background: var(--success); }
+  .step.err .dot { background: var(--danger); }
+  .step code { font: 500 12px/18px var(--font-mono); }
+  .step .st { margin-left: auto; font: 400 12px/18px var(--font-sans); color: var(--fg-subtle); }
+  .step .io { color: var(--fg-subtle); font: 400 12px/18px var(--font-mono);
+    margin-top: 4px; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .thought-tokens { color: var(--fg-subtle); font: 400 12px/16px var(--font-sans); }
+  @media (max-width: 640px) { .orb-sheet { width: 100%; } }
 </style>
 </head>
 <body>
+<!-- Градиенты шарика: один скрытый <svg><defs> на всё приложение. Цвета —
+     токены приложения, поэтому шарик перекрашивается вместе с темой. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <radialGradient id="orb-grad" cx="35%" cy="28%" r="80%">
+      <stop offset="0" style="stop-color:var(--violet, #B9AEFF)"/>
+      <stop offset=".55" style="stop-color:var(--accent, #8B7CF6)"/>
+      <stop offset="1" style="stop-color:var(--accent, #6A58E8)"/>
+    </radialGradient>
+    <radialGradient id="orb-warm" cx="35%" cy="28%" r="80%">
+      <stop offset="0" stop-color="#FFD9A8"/>
+      <stop offset=".55" stop-color="#E7A15A"/>
+      <stop offset="1" stop-color="#B7791F"/>
+    </radialGradient>
+    <radialGradient id="orb-glow" cx="50%" cy="50%" r="50%">
+      <stop offset=".55" style="stop-color:var(--accent, #8B7CF6)" stop-opacity=".45"/>
+      <stop offset="1" style="stop-color:var(--accent, #8B7CF6)" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+</svg>
 
 <aside class="sidebar">
   <div class="side-head">
@@ -1122,6 +1221,29 @@
 
 <div class="toast" id="toast" role="alert" hidden></div>
 
+<!-- Окно «Размышление»: лист справа поверх приложения + scrim. Открывается
+     кликом по шарику — и у живого ответа (данные по мере прихода), и у
+     сохранённого (m.tool_traces, m.reasoning). -->
+<div class="orb-scrim" id="orb-scrim"></div>
+<aside class="orb-sheet" id="orb-sheet" aria-label="Размышление">
+  <header>
+    <span class="orb" id="sheet-orb" data-state="idle"></span>
+    <div><b>Исследователь</b><span id="sheet-sub">размышление</span></div>
+    <button id="orb-close" aria-label="Закрыть">×</button>
+  </header>
+  <div class="scroll">
+    <div>
+      <h3>Размышление</h3>
+      <div class="thought" id="thought-text"></div>
+    </div>
+    <div>
+      <h3>Шаги</h3>
+      <ol class="steps" id="thought-steps"></ol>
+    </div>
+    <div class="thought-tokens" id="thought-tokens"></div>
+  </div>
+</aside>
+
 <script>
 const $ = (id) => document.getElementById(id);
 const inner = $('inner'), msgs = $('msgs'), input = $('input'), send = $('send');
@@ -1196,6 +1318,19 @@ const TRASH_GLYPH = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
 
 const TICK_GLYPH = `<svg class="tick" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
   stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+
+/* ---------- Шарик «Исследователь» ---------- */
+// Разметка шарика для вставки инлайном в каждый экземпляр (эталон —
+// docs/orb-prototype.html). Глаза наклонены обёрткой <g transform="rotate…">,
+// моргание и состояния — CSS-классами на rect.eye (см. .orb в <style>).
+const ORB_SVG = `<svg viewBox="0 0 100 100" aria-hidden="true"><circle class="glow" cx="50" cy="52" r="62" fill="url(#orb-glow)"/>`
+  + `<g class="body"><circle class="body-fill" cx="50" cy="50" r="46" fill="url(#orb-grad)"/>`
+  + `<ellipse cx="36" cy="27" rx="13" ry="7" fill="#fff" opacity=".28" transform="rotate(-28 36 27)"/>`
+  + `<g class="eyes">`
+  + `<g transform="rotate(-18 58 35)"><rect class="eye" x="54" y="25" width="8.5" height="21" rx="4.25" style="fill:var(--sage-900, #1E2E22)"/></g>`
+  + `<g transform="rotate(-18 73 33)"><rect class="eye" x="69" y="23" width="8.5" height="21" rx="4.25" style="fill:var(--sage-900, #1E2E22)"/></g>`
+  + `</g></g></svg>`;
+function orbSvg() { return ORB_SVG; }
 
 /* ---------- Markdown ---------- */
 // Модель отвечает markdown-ом. Разметку разбираем сами: текст сначала полностью
@@ -1311,14 +1446,30 @@ function renderMarkdown(text) {
 /* ---------- Отрисовка ленты ---------- */
 
 function showEmpty() {
-  const text = activeId
-    ? 'Чат пустой. Спроси что-нибудь — вопрос и ответ лягут на диск, и после перезапуска разговор продолжится с этого места.'
-    : 'Начни новый чат: напиши вопрос внизу или нажми «Новый чат» слева.';
   inner.innerHTML = '';
-  const box = document.createElement('div');
-  box.className = 'empty';
-  box.textContent = text;
-  inner.append(box);
+  // Без активного чата — прежняя подсказка, текст не меняется.
+  if (!activeId) {
+    const box = document.createElement('div');
+    box.className = 'empty';
+    box.textContent = 'Начни новый чат: напиши вопрос внизу или нажми «Новый чат» слева.';
+    inner.append(box);
+    return;
+  }
+  const hero = document.createElement('div');
+  hero.className = 'hero';
+  const orb = document.createElement('button');
+  orb.className = 'orb';
+  orb.dataset.state = 'idle';
+  orb.setAttribute('aria-label', 'Исследователь');
+  orb.innerHTML = orbSvg();
+  const hi = document.createElement('div');
+  hi.className = 'hi';
+  hi.textContent = 'Чем займёмся?';
+  const sub = document.createElement('div');
+  sub.className = 'sub';
+  sub.textContent = 'Найду проекты, соберу обзор и сохраню отчёт';
+  hero.append(orb, hi, sub);
+  inner.append(hero);
 }
 
 // Кнопка «ветка отсюда». `at` — индекс сообщения в истории: по нему сервер
@@ -1355,9 +1506,11 @@ function botTurn(at) {
   const turn = document.createElement('div');
   turn.className = 'turn';
   if (at != null) turn.dataset.at = at;
-  const av = document.createElement('div');
-  av.className = 'av';
-  av.innerHTML = BOT_GLYPH;
+  const orb = document.createElement('button');
+  orb.className = 'orb';
+  orb.dataset.state = 'idle';
+  orb.setAttribute('aria-label', 'Открыть размышление');
+  orb.innerHTML = orbSvg();
   const body = document.createElement('div');
   body.className = 'body';
   const msg = document.createElement('div');
@@ -1371,11 +1524,11 @@ function botTurn(at) {
   const sverkaText = document.createElement('div');
   sverkaText.className = 'sv-text';
   sverka.append(sverkaHead, sverkaText);
-  // Лоадер фаз: виден, пока ответ генерируется и проверяется.
+  // Строка фазы: одна строка рядом с шариком, пока идёт ход. Точек
+  // лоадера больше нет — состояние видно по самому шарику.
   const phase = document.createElement('div');
   phase.className = 'phase';
   phase.setAttribute('role', 'status');
-  phase.innerHTML = '<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>';
   const phaseText = document.createElement('span');
   phase.append(phaseText);
   const text = document.createElement('span');
@@ -1385,8 +1538,8 @@ function botTurn(at) {
   msg.append(sverka, phase, text, caret);
   const fork = forkButton(at);
   body.append(msg);
-  turn.append(av, body);
-  return { turn, body, msg, text, caret, fork, sverka, sverkaHead, sverkaText, phase, phaseText };
+  turn.append(orb, body);
+  return { turn, body, msg, text, caret, fork, sverka, sverkaHead, sverkaText, phase, phaseText, orb };
 }
 
 // Первая строка ответа «Сверка: I1 ✓, I2 — не касается…». Модель иногда
@@ -1419,29 +1572,156 @@ function paintSverka(bot, line) {
   bot.sverkaText.textContent = line;
 }
 
-// Фаза хода, пока текста ещё нет: генерация, проверка, перегенерация.
-function paintTool(bot, trace) {
-  if (!bot.toolTrace) {
-    bot.toolTrace = document.createElement('details');
-    bot.toolTrace.className = 'mcp-tool';
-    bot.toolTrace.append(document.createElement('summary'), document.createElement('pre'));
-    bot.body.insertBefore(bot.toolTrace, bot.msg);
+// Состояние шарика по событиям хода: phase answer → «думает», tool →
+// «инструмент» + подскок + строка статуса, phase проверки → «проверяет»,
+// retry → «перегенерирует», done/error → «готово». Текст фазы — одна строка
+// рядом с шариком, пока идёт ход.
+function toolStatus(name) {
+  if (name === 'search_repositories') return 'Ищет на GitHub…';
+  if (name === 'summarize') return 'Пишет обзор…';
+  if (name === 'save_to_file') return 'Сохраняет файл…';
+  if (typeof name === 'string' && name.startsWith('watch_')) return 'Работает с наблюдениями…';
+  return 'Работает с инструментом…';
+}
+
+function setOrb(bot, kind, arg) {
+  if (!bot || !bot.orb) return;
+  if (kind === 'tool') {
+    bot.orb.dataset.state = 'tool';
+    bot.phaseText.textContent = toolStatus(arg);
+    bot.orb.classList.remove('hop');
+    void bot.orb.offsetWidth;
+    bot.orb.classList.add('hop');
+  } else if (kind === 'think') {
+    bot.orb.dataset.state = 'think';
+    bot.phaseText.textContent = 'Думает…';
+  } else if (kind === 'check') {
+    bot.orb.dataset.state = 'check';
+    bot.phaseText.textContent = 'Проверяю инварианты и этап…';
+  } else if (kind === 'retry') {
+    bot.orb.dataset.state = 'retry';
+    bot.phaseText.textContent = `Нарушен ${(arg || []).map(checkLabel).join(', ')} — переписываю…`;
+  } else {
+    bot.orb.dataset.state = 'done';
+    bot.phaseText.textContent = '';
   }
-  const status = !trace.result ? 'выполняется…' : trace.result.isError ? 'ошибка' : 'результат получен';
-  bot.toolTrace.querySelector('summary').textContent = `MCP · ${trace.name} · ${status}`;
-  bot.toolTrace.querySelector('pre').textContent = 'Параметры:\n'
-    + JSON.stringify(trace.arguments, null, 2)
-    + (trace.result ? '\n\nРезультат:\n' + JSON.stringify(trace.result.structuredContent || trace.result, null, 2) : '');
-  if (!trace.result) bot.phaseText.textContent = `Вызываю ${trace.name} через MCP…`;
 }
 
 function showPhase(bot, data) {
   bot.msg.classList.add('waiting');
-  const retry = data.phase === 'retry';
-  bot.phase.classList.toggle('retry', retry);
-  bot.phaseText.textContent = retry
-    ? `Нарушен ${(data.ids || []).map(checkLabel).join(', ')} — переписываю…`
-    : (data.phase === 'check' ? 'Проверяю инварианты и этап…' : 'Отвечаю…');
+  bot.phase.classList.toggle('retry', data.phase === 'retry');
+  if (data.phase === 'retry') setOrb(bot, 'retry', data.ids);
+  else if (data.phase === 'check') setOrb(bot, 'check');
+  else setOrb(bot, 'think');
+}
+
+// Шаги хода: событие tool приходит дважды на вызов (до — с result null,
+// после — с результатом). Второе заменяет последнюю запись с тем же именем
+// и result == null, иначе запись добавляется новой.
+function pushTrace(list, trace) {
+  if (trace && trace.result) {
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i].name === trace.name && !list[i].result) { list[i] = trace; return; }
+    }
+  }
+  list.push(trace);
+}
+
+// Чип файла под ответом, если среди шагов есть успешный save_to_file.
+function fileChip(traces) {
+  const hit = (traces || []).find(t => t.name === 'save_to_file'
+    && t.result && t.result.isError === false
+    && t.result.structuredContent && t.result.structuredContent.file);
+  if (!hit) return null;
+  const sc = hit.result.structuredContent;
+  const a = document.createElement('a');
+  a.className = 'file';
+  a.href = sc.url || ('/api/files/' + encodeURIComponent(sc.file));
+  a.setAttribute('download', sc.file);
+  a.textContent = '📄 ' + sc.file;
+  return a;
+}
+
+/* ---------- Окно «Размышление» ---------- */
+// Живой ответ revisits лист по мере прихода событий, сохранённый — один раз
+// по m.tool_traces/m.reasoning. Токены — из metrics ответа.
+let thoughtLive = null;
+
+function stepLi(t) {
+  const li = document.createElement('li');
+  const state = !t.result ? 'run' : (t.result.isError ? 'err' : 'ok');
+  li.className = 'step ' + state;
+  const top = document.createElement('div');
+  top.className = 'top';
+  const dot = document.createElement('span');
+  dot.className = 'dot';
+  const code = document.createElement('code');
+  code.textContent = t.name;
+  const st = document.createElement('span');
+  st.className = 'st';
+  st.textContent = !t.result ? 'выполняется…' : (t.result.isError ? 'ошибка' : 'готово');
+  top.append(dot, code, st);
+  li.append(top);
+  const ioArgs = document.createElement('div');
+  ioArgs.className = 'io';
+  ioArgs.textContent = '→ ' + JSON.stringify(t.arguments);
+  li.append(ioArgs);
+  if (t.result) {
+    const ioRes = document.createElement('div');
+    ioRes.className = 'io';
+    const sc = t.result.structuredContent !== undefined ? t.result.structuredContent : t.result;
+    ioRes.textContent = '← ' + JSON.stringify(sc);
+    li.append(ioRes);
+  }
+  return li;
+}
+
+function paintThought(thought, traces, metrics, live) {
+  $('thought-text').textContent = thought || '';
+  const ol = $('thought-steps');
+  ol.innerHTML = '';
+  for (const t of traces || []) ol.append(stepLi(t));
+  $('thought-tokens').textContent = metrics ? metricsLine(metrics) : 'токены появятся после ответа';
+  $('sheet-sub').textContent = live ? 'размышление · идёт' : 'размышление · готово';
+}
+
+function openThoughtLive(live) {
+  thoughtLive = live;
+  paintThought(live.thought, live.traces, null, true);
+  document.body.classList.add('orb-open');
+}
+
+function openThoughtSaved(m) {
+  thoughtLive = null;
+  paintThought(m.reasoning, m.tool_traces, m.metrics, false);
+  document.body.classList.add('orb-open');
+}
+
+function closeThought() {
+  document.body.classList.remove('orb-open');
+  thoughtLive = null;
+}
+
+function refreshLiveThought(live) {
+  if (thoughtLive === live) paintThought(live.thought, live.traces, null, true);
+}
+
+// Моргание: случайно 2.6–5.8 с, иногда двойное, только у последнего шарика
+// ассистента в спокойных состояниях (ждёт/думает/готово).
+function scheduleBlink() {
+  setTimeout(() => {
+    const orbs = document.querySelectorAll('#inner .turn .orb');
+    const last = orbs[orbs.length - 1];
+    if (last && ['idle', 'think', 'done'].includes(last.dataset.state)) {
+      last.classList.add('blink');
+      setTimeout(() => last.classList.remove('blink'), 130);
+      if (Math.random() < 0.25) setTimeout(() => {
+        last.classList.add('blink');
+        setTimeout(() => last.classList.remove('blink'), 120);
+      }, 260);
+    }
+    scheduleBlink();
+  }, 2600 + Math.random() * 3200);
 }
 
 // Ответ перерисовывается целиком на каждый delta: тексты короткие, а частичный
@@ -1625,19 +1905,6 @@ function verdictBadge(v) {
 function applyVerdict(bot, v) {
   bot.msg.classList.toggle('failed', !!v && v.status === 'failed');
   if (v) bot.body.append(verdictBadge(v));
-}
-
-function addReasoning(body, msg) {
-  const details = document.createElement('details');
-  details.className = 'reasoning';
-  details.open = true; // пока стримится — видно; после ответа свернём
-  const summary = document.createElement('summary');
-  summary.textContent = 'Рассуждение';
-  const text = document.createElement('div');
-  text.className = 'r-text';
-  details.append(summary, text);
-  body.insertBefore(details, msg);
-  return { details, summary, text };
 }
 
 /* ---------- Сжатая история ---------- */
@@ -2361,7 +2628,10 @@ function renderMessages(messages) {
     const bot = botTurn(at);
     paintBot(bot, m.content);
     applyVerdict(bot, m.verdict);
-    if (m.tool_trace) paintTool(bot, m.tool_trace);
+    bot.orb.dataset.state = 'done';
+    bot.orb.addEventListener('click', () => openThoughtSaved(m));
+    const chip = fileChip(m.tool_traces);
+    if (chip) bot.body.insertBefore(chip, bot.msg.nextSibling);
     if (m.metrics) {
       bot.body.append(metaLine(m.metrics, prev));
       prev = m.metrics;
@@ -3337,8 +3607,15 @@ async function ask() {
   inner.append(bot.turn);
   scroll();
 
-  let reasoning = null;
   let answer = '';
+  // Живые данные окна «Размышление»: рассуждение и шаги копятся по мере
+  // событий и на `done` уходят в историю вместе с ответом.
+  const live = { thought: '', traces: [] };
+  let savedAnswer = null;
+  bot.orb.addEventListener('click', () => {
+    if (savedAnswer) openThoughtSaved(savedAnswer);
+    else openThoughtLive(live);
+  });
   // Вердикт валидатора приходит сразу за текстом и ложится в историю вместе
   // с ответом на `done`.
   let verdict = null;
@@ -3369,7 +3646,11 @@ async function ask() {
       badge.textContent = 'контекст превышен';
       bot.body.insertBefore(badge, bot.msg);
     }
-    if (reasoning) reasoning.details.open = false;
+    setOrb(bot, 'done');
+    if (thoughtLive === live) {
+      thoughtLive = null;
+      paintThought(live.thought, live.traces, null, false);
+    }
     finish();
     scroll();
     // Единственный источник правды про историю — файл на диске. Страница не
@@ -3390,11 +3671,13 @@ async function ask() {
   const handle = (name, data) => {
     const stick = atBottom();
     if (name === 'reasoning') {
-      if (!reasoning) reasoning = addReasoning(bot.body, bot.msg);
-      reasoning.text.textContent += data;
-      reasoning.text.scrollTop = reasoning.text.scrollHeight;
+      live.thought += data;
+      setOrb(bot, 'think');
+      refreshLiveThought(live);
     } else if (name === 'tool') {
-      paintTool(bot, data);
+      pushTrace(live.traces, data);
+      setOrb(bot, 'tool', data.name);
+      refreshLiveThought(live);
     } else if (name === 'phase') {
       showPhase(bot, data);
     } else if (name === 'content') {
@@ -3408,10 +3691,13 @@ async function ask() {
       applyVerdict(bot, verdict);
     } else if (name === 'done') {
       paintBot(bot, answer);
+      setOrb(bot, 'done');
+      const chip = fileChip(live.traces);
+      if (chip) bot.body.insertBefore(chip, bot.msg.nextSibling);
       bot.body.append(metaLine(data, answers().slice(-1)[0] || null), bot.fork);
-      if (reasoning) {
-        reasoning.summary.textContent = `Рассуждение · ${num(data.reasoning_tokens)} токенов`;
-        reasoning.details.open = false;
+      if (thoughtLive === live) {
+        thoughtLive = null;
+        paintThought(live.thought, live.traces, data, false);
       }
       // Столько символов реально ушло в запрос: системный промпт, включённые
       // слои памяти и та часть истории, которую отобрала стратегия, без
@@ -3436,7 +3722,9 @@ async function ask() {
       // Принят ли план из этого ответа, решает сервер после `done`; до
       // перечитывания чата карточка ждёт без статуса и без кнопок.
       history.push({ role: 'assistant', content: answer, metrics: data, verdict,
+        tool_traces: live.traces, reasoning: live.thought || null,
         plan_pending: !!splitPlan(answer) });
+      savedAnswer = history[history.length - 1];
       setForkAt(bot.fork, history.length - 1);
       bot.turn.dataset.at = history.length - 1;
       // У карточки плана появился индекс — теперь ей есть с чем сравниться.
@@ -3934,8 +4222,10 @@ $('delete-ok').addEventListener('click', async () => {
 $('delete-modal').addEventListener('click', (e) => { if (e.target === $('delete-modal')) closeDelete(); });
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
-  // Закрывается верхний слой: поповер, потом окна, потом дровер и оверлей.
-  if (anyPopoverOpen()) closePopovers();
+  // Закрывается верхний слой: лист «Размышление» поверх всего, потом
+  // поповер, окна, дровер и оверлей.
+  if (document.body.classList.contains('orb-open')) closeThought();
+  else if (anyPopoverOpen()) closePopovers();
   else if (!$('mcp-modal').hidden) closeMcp();
   else if (!$('delete-modal').hidden) closeDelete();
   else if (!$('settings-modal').hidden) closeSettings();
@@ -3979,6 +4269,11 @@ msgs.addEventListener('scroll', updateJump);
 // Ширина графика — в пикселях, поэтому его надо перерисовать, когда дровер
 // меняет размер вместе с окном.
 window.addEventListener('resize', () => { renderChart(); updateJump(); });
+
+$('sheet-orb').innerHTML = orbSvg();
+$('orb-scrim').addEventListener('click', closeThought);
+$('orb-close').addEventListener('click', closeThought);
+scheduleBlink();
 
 boot().catch(e => { inner.textContent = 'Не удалось получить состояние агента: ' + e.message; });
 </script>

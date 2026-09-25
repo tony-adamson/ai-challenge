@@ -33,7 +33,7 @@ pub async fn connect(url: &str) -> Result<Client, String> {
     let transport = StreamableHttpClientTransport::from_uri(url.to_owned());
     let info = ClientConfig::new(
         ClientCapabilities::default(),
-        Implementation::new("w4d3-researcher", env!("CARGO_PKG_VERSION")),
+        Implementation::new("w4d4-researcher", env!("CARGO_PKG_VERSION")),
     );
     timeout(
         TIMEOUT,
