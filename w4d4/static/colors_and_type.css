@@ -1,0 +1,299 @@
+/* ===========================================================================
+   Calm Intelligence — Design System
+   colors_and_type.css
+   ---------------------------------------------------------------------------
+   The single source of truth for color, typography, spacing, radius,
+   shadows, and core semantic tokens. Import this once at the root of any
+   product, document, landing page or slide deck.
+   =========================================================================== */
+
+/* ---------- Fonts ---------- */
+
+@font-face {
+  font-family: "Manrope";
+  src: url("./fonts/Manrope-VariableFont_wght.ttf") format("truetype-variations");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ===========================================================================
+   TOKENS
+   =========================================================================== */
+
+:root {
+  /* ---------- Foundation (warm neutrals) ---------- */
+  --paper:        #F7F4ED;  /* main background, docs, landing */
+  --porcelain:    #FFFDF8;  /* clean surface, cards */
+  --soft-stone:   #EFEAE1;  /* secondary background, blocks */
+  --sand-line:    #DED8CD;  /* borders, hairlines, tables */
+  --linen:        #E9E0D2;  /* print, soft panels */
+  --warm-mist:    #F2EEE6;  /* hover, subtle states */
+
+  /* ---------- Text ---------- */
+  --ink:          #171717;  /* primary text */
+  --graphite:     #2F312E;  /* headings, dense UI */
+  --ash:          #66635C;  /* secondary text */
+  --dust:         #8B867A;  /* captions, metadata */
+  --disabled:     #B6B0A5;  /* disabled, placeholder */
+  --warm-light:   #F4F1EA;  /* text on dark surfaces */
+
+  /* ---------- Brand: Sage ---------- */
+  --sage-900:     #1E2E22;  /* sage ink — text on sage tint */
+  --sage-800:     #263A2A;  /* deep sage — dark CTA, brand */
+  --sage-700:     #4F6F52;  /* PRIMARY brand */
+  --sage-500:     #7FA483;  /* fresh sage — active state */
+  --sage-200:     #DCE8D8;  /* sage soft — fill */
+  --sage-100:     #EEF5EB;  /* sage tint — positive block bg */
+
+  /* ---------- Accents ---------- */
+  --copper:       #C47A4A;  /* warmth / food / premium */
+  --clay:         #A65F3B;  /* strong warm accent */
+  --blue:         #3B82F6;  /* tech / VPN / links */
+  --cyan:         #06B6D4;  /* speed / AI / energy */
+  --violet:       #8B7CF6;  /* kids AI / soft magic */
+  --gold:         #B99A5B;  /* premium badges */
+
+  /* ---------- Semantic ---------- */
+  --success:      #4F7D55;
+  --success-bg:   #E8F2E6;
+  --warning:      #B7791F;
+  --warning-bg:   #FFF3D6;
+  --danger:       #B04A3A;
+  --danger-bg:    #F7E3DF;
+  --info:         #3B82F6;
+  --info-bg:      #E7F0FF;
+
+  /* ---------- Dark mode palette (manually opt-in via .dark) ---------- */
+  --night-soil:    #0F1110;
+  --deep-moss:     #181A18;
+  --charcoal-leaf: #22251F;
+  --dark-line:     #34382F;
+  --dark-text:     #F4F1EA;
+  --dark-muted:    #A8A399;
+
+  /* ---------- Semantic surface tokens (light) ---------- */
+  --bg:            var(--paper);
+  --surface:       var(--porcelain);
+  --surface-alt:   var(--soft-stone);
+  --surface-mist:  var(--warm-mist);
+  --border:        var(--sand-line);
+  --border-strong: var(--dust);
+
+  --fg:            var(--ink);
+  --fg-strong:     var(--graphite);
+  --fg-muted:      var(--ash);
+  --fg-subtle:     var(--dust);
+  --fg-disabled:   var(--disabled);
+  --fg-on-dark:    var(--warm-light);
+  --fg-on-brand:   var(--warm-light);
+
+  --brand:         var(--sage-700);
+  --brand-strong:  var(--sage-800);
+  --brand-deep:    var(--sage-900);
+  --brand-bright:  var(--sage-500);
+  --brand-soft:    var(--sage-200);
+  --brand-tint:    var(--sage-100);
+
+  /* ---------- Typography ---------- */
+  --font-sans: "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+               Roboto, Inter, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
+               Consolas, monospace;
+
+  --fw-extralight: 200;
+  --fw-light:      300;
+  --fw-regular:    400;
+  --fw-medium:     500;
+  --fw-semibold:   600;
+  --fw-bold:       700;
+  --fw-extrabold:  800;
+
+  /* Type scale — size / line-height / weight / tracking
+     Mirrors the foundation spec exactly. */
+  --t-display-size: 56px;  --t-display-lh: 64px;  --t-display-w: 700; --t-display-tr: -0.04em;
+  --t-h1-size:      40px;  --t-h1-lh:      48px;  --t-h1-w:      700; --t-h1-tr:      -0.03em;
+  --t-h2-size:      32px;  --t-h2-lh:      40px;  --t-h2-w:      650; --t-h2-tr:      -0.025em;
+  --t-h3-size:      24px;  --t-h3-lh:      32px;  --t-h3-w:      650; --t-h3-tr:      -0.02em;
+  --t-title-size:   20px;  --t-title-lh:   28px;  --t-title-w:   600; --t-title-tr:   -0.01em;
+  --t-body-size:    16px;  --t-body-lh:    24px;  --t-body-w:    400; --t-body-tr:    0;
+  --t-small-size:   14px;  --t-small-lh:   20px;  --t-small-w:   400; --t-small-tr:   0;
+  --t-caption-size: 12px;  --t-caption-lh: 16px;  --t-caption-w: 500; --t-caption-tr: 0.02em;
+
+  /* ---------- Spacing — 4pt rhythm ---------- */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+
+  /* ---------- Radius ---------- */
+  --r-xs:  6px;   /* badges, chips */
+  --r-sm:  10px;  /* inputs, compact controls */
+  --r-md:  16px;  /* buttons, cards */
+  --r-lg:  24px;  /* large cards, modals */
+  --r-xl:  32px;  /* hero panels, onboarding */
+  --r-full: 999px;
+
+  /* ---------- Borders ---------- */
+  --hairline:  1px solid var(--sand-line);
+  --hairline-strong: 1px solid var(--dust);
+  --hairline-brand: 1px solid var(--sage-200);
+
+  /* ---------- Shadows (restrained — borders preferred) ---------- */
+  --shadow-xs: 0 1px 2px rgba(23, 23, 23, 0.04);
+  --shadow-sm: 0 2px 6px -1px rgba(23, 23, 23, 0.06),
+               0 1px 2px rgba(23, 23, 23, 0.04);
+  --shadow-md: 0 8px 24px -8px rgba(23, 23, 23, 0.08),
+               0 2px 6px -2px rgba(23, 23, 23, 0.04);
+  --shadow-lg: 0 24px 48px -16px rgba(23, 23, 23, 0.12),
+               0 4px 12px -4px rgba(23, 23, 23, 0.06);
+  --shadow-inset: inset 0 0 0 1px rgba(23, 23, 23, 0.04);
+
+  /* Print + document: drop shadows entirely */
+  --shadow-doc-none: none;
+
+  /* ---------- Motion ---------- */
+  --ease-standard: cubic-bezier(0.2, 0, 0.1, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --dur-1: 120ms;
+  --dur-2: 180ms;
+  --dur-3: 240ms;
+  --dur-4: 320ms;
+  --dur-5: 480ms;
+}
+
+/* ---------- Dark mode (opt-in via .dark on a container) ---------- */
+.dark, [data-theme="dark"] {
+  --bg:            var(--night-soil);
+  --surface:       var(--deep-moss);
+  --surface-alt:   var(--charcoal-leaf);
+  --surface-mist:  var(--charcoal-leaf);
+  --border:        var(--dark-line);
+  --border-strong: var(--dark-muted);
+
+  --fg:            var(--dark-text);
+  --fg-strong:     var(--dark-text);
+  --fg-muted:      var(--dark-muted);
+  --fg-subtle:     var(--dark-muted);
+  --fg-disabled:   #5C5F58;
+  --fg-on-dark:    var(--dark-text);
+
+  --brand:         var(--sage-500);
+  --brand-strong:  var(--sage-700);
+  --brand-deep:    var(--sage-800);
+  --brand-bright:  var(--sage-500);
+  --brand-soft:    rgba(127, 164, 131, 0.18);
+  --brand-tint:    rgba(127, 164, 131, 0.10);
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 24px -8px rgba(0, 0, 0, 0.5);
+}
+
+/* ===========================================================================
+   BASE + SEMANTIC ELEMENT STYLES
+   =========================================================================== */
+
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+body {
+  font-family: var(--font-sans);
+  font-size:   var(--t-body-size);
+  line-height: var(--t-body-lh);
+  font-weight: var(--t-body-w);
+  color:       var(--fg);
+  background:  var(--bg);
+  font-feature-settings: "ss01", "ss02", "cv11";
+  text-rendering: optimizeLegibility;
+}
+
+/* Headings — use class hooks too, so JSX components can apply without h-level */
+h1, .t-h1, .text-h1 {
+  font: var(--fw-bold) var(--t-h1-size)/var(--t-h1-lh) var(--font-sans);
+  letter-spacing: var(--t-h1-tr);
+  color: var(--fg-strong);
+  margin: 0;
+  text-wrap: balance;
+}
+h2, .t-h2, .text-h2 {
+  font: 650 var(--t-h2-size)/var(--t-h2-lh) var(--font-sans);
+  letter-spacing: var(--t-h2-tr);
+  color: var(--fg-strong);
+  margin: 0;
+  text-wrap: balance;
+}
+h3, .t-h3, .text-h3 {
+  font: 650 var(--t-h3-size)/var(--t-h3-lh) var(--font-sans);
+  letter-spacing: var(--t-h3-tr);
+  color: var(--fg-strong);
+  margin: 0;
+}
+.t-display, .text-display {
+  font: var(--fw-bold) var(--t-display-size)/var(--t-display-lh) var(--font-sans);
+  letter-spacing: var(--t-display-tr);
+  color: var(--fg-strong);
+  text-wrap: balance;
+}
+.t-title, .text-title {
+  font: var(--fw-semibold) var(--t-title-size)/var(--t-title-lh) var(--font-sans);
+  letter-spacing: var(--t-title-tr);
+  color: var(--fg-strong);
+}
+p, .t-body, .text-body {
+  font: var(--fw-regular) var(--t-body-size)/var(--t-body-lh) var(--font-sans);
+  color: var(--fg);
+  margin: 0;
+  text-wrap: pretty;
+}
+.t-small, .text-small {
+  font: var(--fw-regular) var(--t-small-size)/var(--t-small-lh) var(--font-sans);
+  color: var(--fg-muted);
+}
+.t-caption, .text-caption {
+  font: var(--fw-medium) var(--t-caption-size)/var(--t-caption-lh) var(--font-sans);
+  letter-spacing: var(--t-caption-tr);
+  color: var(--fg-subtle);
+  text-transform: uppercase;
+}
+
+/* Link */
+a, .t-link {
+  color: var(--blue);
+  text-decoration: none;
+  text-underline-offset: 3px;
+  transition: color var(--dur-1) var(--ease-standard);
+}
+a:hover, .t-link:hover { text-decoration: underline; }
+
+/* Mono / code */
+code, kbd, samp, pre, .t-mono {
+  font-family: var(--font-mono);
+  font-size: 0.9375em;
+}
+
+/* Selection — warm sage */
+::selection { background: var(--sage-200); color: var(--sage-900); }
+
+/* Focus ring — sage, calm */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--sage-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Horizontal rule */
+hr {
+  border: 0;
+  height: 1px;
+  background: var(--border);
+  margin: var(--space-8) 0;
+}

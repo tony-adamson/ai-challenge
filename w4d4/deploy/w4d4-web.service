@@ -1,0 +1,14 @@
+[Unit]
+Description=w4d4 веб-интерфейс исследователя и цикл сводок (127.0.0.1:8799)
+After=network-online.target w4d4-mcp.service
+Wants=network-online.target w4d4-mcp.service
+
+[Service]
+User=user
+WorkingDirectory=/home/user/ai_challenge/w4d4
+ExecStart=/home/user/ai_challenge/w4d4/target/release/w4d4
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
