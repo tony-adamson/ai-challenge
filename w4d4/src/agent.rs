@@ -305,6 +305,11 @@ pub struct Settings {
     /// Через сколько накопившихся сверх хвоста сообщений сворачивать снова.
     /// Только для `summary`.
     pub summarize_every: usize,
+    /// Режим планирования, как Plan mode в Claude Code: этапы задачи,
+    /// правило этапа в проверке и инструменты только на выполнении. Выключен —
+    /// обычный чат: инструменты сразу, этапа в запросе и в проверке нет.
+    /// Старые чаты поля не знают, им достаётся `false`.
+    pub plan_mode: bool,
 }
 
 /// Настройки, как они лежат в файле чата. Отдельная форма нужна ради дня 9:
@@ -331,6 +336,8 @@ struct SettingsFile {
     keep_last: usize,
     #[serde(default = "default_summarize_every")]
     summarize_every: usize,
+    #[serde(default)]
+    plan_mode: bool,
 }
 
 impl<'de> Deserialize<'de> for Settings {
@@ -352,6 +359,7 @@ impl<'de> Deserialize<'de> for Settings {
             layers: file.layers,
             keep_last: file.keep_last,
             summarize_every: file.summarize_every,
+            plan_mode: file.plan_mode,
         })
     }
 }
@@ -391,6 +399,7 @@ impl Default for Settings {
             layers: Layers::default(),
             keep_last: DEFAULT_KEEP_LAST,
             summarize_every: DEFAULT_SUMMARIZE_EVERY,
+            plan_mode: false,
         }
     }
 }
@@ -1523,7 +1532,7 @@ pub fn request_messages(
     if settings.layers.long_term {
         out.extend(long_term_message(long_term));
     }
-    if settings.layers.task {
+    if task_layer_on(settings) {
         out.extend(task_message(task, task.resumed_from.is_some()));
     }
     if settings.layers.working {
@@ -1567,12 +1576,31 @@ pub fn layer_stats(
             .layers
             .long_term
             .then(|| stat(long_term.len(), long_term_message(long_term))),
-        task: settings.layers.task.then(|| {
+        task: task_layer_on(settings).then(|| {
             stat(task_items(task), task_message(task, task.resumed_from.is_some()))
         }),
         working: settings.layers.working.then(|| stat(working.len(), working_message(working))),
         short_term: LayerStat { items: tail.len(), tokens: estimate_tokens(short_chars, cpt) },
     }
+}
+
+/// «Состояние задачи» (этап, правило этапа, формат плана) идёт в запрос
+/// только в режиме планирования: без него этапов у чата нет.
+fn task_layer_on(settings: &Settings) -> bool {
+    settings.layers.task && settings.plan_mode
+}
+
+/// Закрыть подключение хода, если оно было открыто.
+async fn close_conn(conn: Option<Result<crate::mcp::Client, String>>) {
+    if let Some(Ok(client)) = conn {
+        crate::mcp::close(client).await;
+    }
+}
+
+/// Инструменты MCP: в режиме планирования — только на этапе выполнения, без
+/// него — на любом ходу.
+pub fn tools_allowed(settings: &Settings, task: &Task) -> bool {
+    !settings.plan_mode || task.stage == Stage::Execution
 }
 
 /// Оценка длины в токенах: точного токенизатора у нас нет, есть калибровка
@@ -2092,19 +2120,22 @@ const VALIDATOR_QUESTION_LIMIT: usize = 2000;
 /// пишется: пункт собирается на каждый ход заново из текущего этапа.
 const STAGE_CHECK_ID: &str = "E";
 
-/// Что проверяет валидатор: пары (id, текст) — включённые инварианты и пункт
-/// «E» с тем, что запрещено на текущем этапе. E есть всегда, даже без
-/// инвариантов и при выключенных слоях: этап у задачи есть всегда.
-pub fn check_items(invariants: &[Invariant], task: &Task) -> Vec<(String, String)> {
+/// Что проверяет валидатор: пары (id, текст) — включённые инварианты, если
+/// их слой включён, и пункт «E» с тем, что запрещено на текущем этапе, — только
+/// в режиме планирования: без него этапов нет. Пустой список — проверять
+/// нечего, и валидатор не зовётся.
+pub fn check_items(settings: &Settings, invariants: &[Invariant], task: &Task) -> Vec<(String, String)> {
     let mut items: Vec<(String, String)> = invariants
         .iter()
-        .filter(|i| i.enabled)
+        .filter(|i| settings.layers.invariants && i.enabled)
         .map(|i| (i.id.clone(), format!("[{}] {}", i.category.label(), i.rule.trim())))
         .collect();
-    items.push((
-        STAGE_CHECK_ID.to_string(),
-        format!("[этап] Этап «{}»: {}", task.stage.label(), task.stage.forbidden()),
-    ));
+    if settings.plan_mode {
+        items.push((
+            STAGE_CHECK_ID.to_string(),
+            format!("[этап] Этап «{}»: {}", task.stage.label(), task.stage.forbidden()),
+        ));
+    }
     items
 }
 
@@ -2260,6 +2291,9 @@ pub struct Agent {
     /// Занятые чаты. Занятость на чат, а не на агента: два разных чата
     /// могут отвечать одновременно, один и тот же — нет.
     busy: Mutex<HashSet<String>>,
+    /// Каталог MCP-инструментов: берётся один раз и живёт до первой ошибки
+    /// подключения — сервер не трогаем на ходах, где инструменты не вызваны.
+    tools: Mutex<Option<Vec<rmcp::model::Tool>>>,
 }
 
 impl Agent {
@@ -2284,7 +2318,7 @@ impl Agent {
             .timeout(TIMEOUT)
             .build()
             .map_err(|e| format!("не удалось создать HTTP-клиент: {e}"))?;
-        Ok(Agent { client, keys, busy: Mutex::new(HashSet::new()) })
+        Ok(Agent { client, keys, busy: Mutex::new(HashSet::new()), tools: Mutex::new(None) })
     }
 
     pub fn is_available(&self, provider: Provider) -> bool {
@@ -2422,9 +2456,9 @@ impl Agent {
 
         // Занятость чата снимает не `ask`, а guard из `reserve` у вызывающего
         // кода: держать её надо ещё и на время служебного вызова памяти.
-        // Валидатор работает при любом положении тумблеров слоёв: выключенный
-        // слой — ровно тот случай, когда вторая линия защиты и нужна.
-        let items = check_items(invariants, &working.task);
+        // Проверяется то, что включено: инварианты — с их слоем, этап — с
+        // режимом планирования. Нечего проверять — валидатор не зовётся.
+        let items = check_items(&chat.settings, invariants, &working.task);
         let outcome =
             self.guard(provider, &key, &chat.settings, &messages, &items, &working.task, &text, tx).await;
 
@@ -2436,7 +2470,7 @@ impl Agent {
                 chat.calibrate(sent_chars, metrics.prompt_tokens);
                 chat.push_assistant(answer, Some(metrics.clone()));
                 if let Some(last) = chat.messages.last_mut() {
-                    last.verdict = Some(verdict);
+                    last.verdict = verdict;
                     last.tool_traces = traces;
                     last.reasoning = reasoning;
                 }
@@ -2474,7 +2508,7 @@ impl Agent {
         task: &Task,
         question: &str,
         tx: &mpsc::Sender<Event>,
-    ) -> Result<(String, Option<String>, Metrics, Verdict, usize, Vec<crate::mcp::ToolTrace>), String> {
+    ) -> Result<(String, Option<String>, Metrics, Option<Verdict>, usize, Vec<crate::mcp::ToolTrace>), String> {
         let phase = |phase: &'static str, ids: Vec<String>| Event::Phase { phase, ids };
         let checked: Vec<String> = items.iter().map(|(id, _)| id.clone()).collect();
         let mut usage = CheckUsage::default();
@@ -2483,14 +2517,26 @@ impl Agent {
         // Ошибка первого черновика — обычная ошибка хода: показать нечего.
         let mut messages = messages.to_vec();
         let (draft, sel_reasoning, draft_final, metrics, traces, sel_total) =
-            if task.stage == Stage::Execution {
-                self.github_draft(provider, key, settings, &mut messages, tx).await?
+            // Нет каталога — ход идёт обычным ответом без инструментов.
+            if let Some(tools) = self.draft_tools(settings, task).await {
+                self.github_draft(provider, key, settings, &mut messages, tools, tx).await?
             } else {
                 let (text, reasoning, metrics) =
                     self.stream(provider, key, settings, &messages, None).await?;
                 (text, Vec::new(), reasoning, metrics, Vec::new(), Usage::default())
             };
         let selection = metrics.tool_selection;
+        // Проверять нечего — черновик и есть ответ: без фазы проверки, без
+        // вердикта и без расхода на валидатор.
+        if items.is_empty() {
+            let chars = sent_chars(&messages);
+            if !draft_final.is_empty() {
+                let _ = tx.send(Event::Reasoning(draft_final.clone())).await;
+            }
+            let _ = tx.send(Event::Content(draft.clone())).await;
+            let stored = join_reasoning(&sel_reasoning, &draft_final);
+            return Ok((draft, stored, metrics, None, chars, traces));
+        }
         let question = if traces.is_empty() {
             question.to_string()
         } else {
@@ -2588,7 +2634,7 @@ impl Agent {
         let _ = tx.send(Event::Content(answer.clone())).await;
         let _ = tx.send(Event::Check(verdict.clone())).await;
         let stored = join_reasoning(&sel_reasoning, &final_reasoning);
-        Ok((answer, stored, metrics, verdict, chars, traces))
+        Ok((answer, stored, metrics, Some(verdict), chars, traces))
     }
 
     /// Одна проверка ответа валидатором. Сбой не роняет ход: он становится
@@ -2789,6 +2835,40 @@ impl Agent {
             })
     }
 
+    /// Каталог для хода: `None`, если инструменты не положены или сервер
+    /// недоступен (тогда кэш не заполняется — следующий ход попробует снова).
+    async fn draft_tools(&self, settings: &Settings, task: &Task) -> Option<Vec<rmcp::model::Tool>> {
+        if !tools_allowed(settings, task) {
+            return None;
+        }
+        let cached = self.tools.lock().unwrap().clone();
+        if cached.is_some() {
+            return cached;
+        }
+        let listed = match crate::mcp::connect(&crate::mcp::watch_url()).await {
+            Ok(client) => {
+                let listed = tokio::time::timeout(Duration::from_secs(5), client.list_all_tools()).await;
+                crate::mcp::close(client).await;
+                match listed {
+                    Ok(Ok(tools)) => Ok(tools),
+                    Ok(Err(error)) => Err(error.to_string()),
+                    Err(_) => Err("Тайм-аут каталога MCP".to_string()),
+                }
+            }
+            Err(error) => Err(error),
+        };
+        match listed {
+            Ok(tools) => {
+                *self.tools.lock().unwrap() = Some(tools.clone());
+                Some(tools)
+            }
+            Err(error) => {
+                eprintln!("MCP недоступен: инструменты в этом ходе отключены: {error}");
+                None
+            }
+        }
+    }
+
     /// Модель получает каталог нашего MCP-сервера и сама решает, нужен ли вызов.
     /// Цикл по раундам (§8.4): до 5 отвеченных вызовов за ход, не больше 6
     /// запросов к модели; запрос после лимита идёт без `tools`.
@@ -2803,16 +2883,13 @@ impl Agent {
         key: &str,
         settings: &Settings,
         messages: &mut Vec<Message>,
+        tools: Vec<rmcp::model::Tool>,
         tx: &mpsc::Sender<Event>,
     ) -> Result<(String, Vec<String>, String, Metrics, Vec<crate::mcp::ToolTrace>, Usage), String> {
         use rmcp::model::{CallToolRequestParams, CallToolResult};
         let started = Instant::now();
-        let client = crate::mcp::connect(&crate::mcp::watch_url()).await?;
-        let tools = match tokio::time::timeout(Duration::from_secs(5), client.list_all_tools()).await {
-            Ok(Ok(tools)) => tools,
-            Ok(Err(error)) => { crate::mcp::close(client).await; return Err(error.to_string()); }
-            Err(_) => { crate::mcp::close(client).await; return Err("Тайм-аут каталога MCP".into()); }
-        };
+        // Подключение для вызовов — лениво, при первом `tool_calls`, одно на ход.
+        let mut conn: Option<Result<crate::mcp::Client, String>> = None;
         let known: Vec<String> = tools.iter().map(|tool| tool.name.to_string()).collect();
         let mut answered = 0usize;
         let mut had_result = false;
@@ -2845,18 +2922,18 @@ impl Agent {
                 response.json::<Value>().await.map_err(describe)
             }.await {
                 Ok(value) => value,
-                Err(error) => { crate::mcp::close(client).await; return Err(error); }
+                Err(error) => { close_conn(conn).await; return Err(error); }
             };
             let message = value["choices"][0]["message"].clone();
             let usage = usage_from(&value["usage"]);
             let decision = match decide_round(&message, answered, had_result, request_no, &catalog) {
                 Ok(decision) => decision,
-                Err(error) => { crate::mcp::close(client).await; return Err(error); }
+                Err(error) => { close_conn(conn).await; return Err(error); }
             };
             // Без `tool_calls` — финальный текст этого раунда, цикл окончен.
             // Его рассуждение — финал: уйдёт событием из `guard`, как в w4d3.
             if decision.actions.is_empty() {
-                crate::mcp::close(client).await;
+                close_conn(conn).await;
                 let (text, _) = parse_completion(&value)
                     .ok_or("Модель не вернула ответ или вызов инструмента")?;
                 let reasoning = message["reasoning_content"].as_str().unwrap_or("").to_string();
@@ -2900,14 +2977,26 @@ impl Agent {
                 let result = match refused {
                     Some(error) => CallToolResult::structured_error(json!({"error": error})),
                     None => {
+                        if conn.is_none() {
+                            let connected = crate::mcp::connect(&crate::mcp::watch_url()).await;
+                            if connected.is_err() {
+                                *self.tools.lock().unwrap() = None;
+                            }
+                            conn = Some(connected);
+                        }
                         let params = CallToolRequestParams::new(name)
                             .with_arguments(arguments.as_object().cloned().unwrap_or_default());
-                        match tokio::time::timeout(Duration::from_secs(60), client.call_tool(params)).await {
-                            Ok(Ok(result)) => result,
-                            Ok(Err(error)) => CallToolResult::structured_error(
-                                json!({"error": error.to_string()})),
-                            Err(_) => CallToolResult::structured_error(
-                                json!({"error": "MCP-инструмент не ответил за 60 секунд"})),
+                        match conn.as_ref().unwrap() {
+                            Err(error) => CallToolResult::structured_error(
+                                json!({"error": format!("MCP недоступен: {error}")})),
+                            Ok(client) => match tokio::time::timeout(
+                                Duration::from_secs(60), client.call_tool(params)).await {
+                                Ok(Ok(result)) => result,
+                                Ok(Err(error)) => CallToolResult::structured_error(
+                                    json!({"error": error.to_string()})),
+                                Err(_) => CallToolResult::structured_error(
+                                    json!({"error": "MCP-инструмент не ответил за 60 секунд"})),
+                            },
                         }
                     }
                 };
@@ -2928,7 +3017,7 @@ impl Agent {
                 break;
             }
         }
-        crate::mcp::close(client).await;
+        close_conn(conn).await;
         let (text, reasoning, mut final_metrics) =
             self.stream(provider, key, settings, messages, None).await?;
         add_selection_total(&mut final_metrics, sel_total);
@@ -3837,7 +3926,7 @@ mod tests {
     #[test]
     fn the_layers_go_into_the_request_in_order() {
         let chat = chat_with_history();
-        let settings = Settings { keep_last: 2, ..Settings::default() };
+        let settings = Settings { keep_last: 2, ..plan_on() };
         let instructions = TEST_INSTRUCTIONS;
         let long_term = [
             entry(Kind::Decision, "язык ответов", "русский"),
@@ -3902,7 +3991,7 @@ mod tests {
 
         let chat = chat_with_history();
         let messages =
-            request_messages(&chat, &Settings::default(), "промпт", &[], "  ", &[], &Task::default(), &[]);
+            request_messages(&chat, &plan_on(), "промпт", &[], "  ", &[], &Task::default(), &[]);
         assert_eq!(messages.len(), 7, "промпт, блок задачи и история");
     }
 
@@ -3919,7 +4008,7 @@ mod tests {
 
         let without_instructions = Settings {
             layers: Layers { invariants: true, instructions: false, long_term: true, task: true, working: true },
-            ..Settings::default()
+            ..plan_on()
         };
         let messages = request_messages(
             &chat, &without_instructions, "промпт", &[], instructions, &long_term, &task, &working,
@@ -3929,7 +4018,7 @@ mod tests {
 
         let without_long = Settings {
             layers: Layers { invariants: true, instructions: true, long_term: false, task: true, working: true },
-            ..Settings::default()
+            ..plan_on()
         };
         let messages =
             request_messages(&chat, &without_long, "промпт", &[], instructions, &long_term, &task, &working);
@@ -3941,7 +4030,7 @@ mod tests {
 
         let without_task = Settings {
             layers: Layers { invariants: true, instructions: true, long_term: true, task: false, working: true },
-            ..Settings::default()
+            ..plan_on()
         };
         let messages =
             request_messages(&chat, &without_task, "промпт", &[], instructions, &long_term, &task, &working);
@@ -3949,9 +4038,16 @@ mod tests {
         assert!(messages[3].content.starts_with("Рабочая память"));
         assert_eq!(task.stage, Stage::Planning, "выключение слоя этап не двигает");
 
+        // Без режима планирования блока задачи нет и при включённом слое.
+        let plan_off = Settings { plan_mode: false, ..plan_on() };
+        let messages =
+            request_messages(&chat, &plan_off, "промпт", &[], instructions, &long_term, &task, &working);
+        assert!(messages.iter().all(|m| !m.content.starts_with("Состояние задачи")));
+        assert!(layer_stats(&chat, &plan_off, &[], instructions, &long_term, &task, &working).task.is_none());
+
         let without_working = Settings {
             layers: Layers { invariants: true, instructions: true, long_term: true, task: true, working: false },
-            ..Settings::default()
+            ..plan_on()
         };
         let messages =
             request_messages(&chat, &without_working, "промпт", &[], instructions, &long_term, &task, &working);
@@ -3960,7 +4056,7 @@ mod tests {
 
         let neither = Settings {
             layers: Layers { invariants: true, instructions: false, long_term: false, task: false, working: false },
-            ..Settings::default()
+            ..plan_on()
         };
         let messages =
             request_messages(&chat, &neither, "промпт", &[], instructions, &long_term, &task, &working);
@@ -3974,7 +4070,7 @@ mod tests {
     fn layer_stats_count_what_actually_went_out() {
         let mut chat = chat_with_history();
         chat.calibrate(400, 100); // 4 символа на токен
-        let settings = Settings { strategy: Strategy::Window, keep_last: 3, ..Settings::default() };
+        let settings = Settings { strategy: Strategy::Window, keep_last: 3, ..plan_on() };
         let instructions = "на ты";
         let long_term = [entry(Kind::Decision, "роль", "студент")];
         let working = [fact("бюджет", "400 тысяч")];
@@ -4024,7 +4120,7 @@ mod tests {
             strategy: Strategy::Summary,
             keep_last: 2,
             layers: Layers { task: false, ..Layers::default() },
-            ..Settings::default()
+            ..plan_on()
         };
 
         let messages =
@@ -4255,6 +4351,9 @@ mod tests {
 
         // Стратегия, которой нет, — отказ разбора, а не молчаливый `full`.
         assert!(parse(with(r#","strategy":"телепатия""#)).is_err());
+        // Чаты до режима планирования поля не знают — план выключен.
+        assert!(!parse(with("")).unwrap().plan_mode);
+        assert!(parse(with(r#","plan_mode":true"#)).unwrap().plan_mode);
 
         // В файл пишется уже только стратегия.
         let text = serde_json::to_string(&Settings::default()).expect("сериализуется");
@@ -4864,7 +4963,7 @@ mod tests {
         assert_eq!(kept.violations.len(), 1);
 
         // Формулировка E прямо говорит, что технические шаги в плане — план.
-        let items = check_items(&[], &Task::default());
+        let items = check_items(&plan_on(), &[], &Task::default());
         assert!(items[0].1.contains("технические шаги внутри блока ```plan (что настроить, какие пины, задержки, какие библиотеки) — это план, а не реализация"), "{items:?}");
     }
 
@@ -4889,7 +4988,7 @@ mod tests {
     /// что вопросы и план — не нарушение.
     #[test]
     fn the_stage_rule_is_always_checked() {
-        let items = check_items(&[], &Task::default());
+        let items = check_items(&plan_on(), &[], &Task::default());
         assert_eq!(items.len(), 1, "инвариантов нет, этап есть: {items:?}");
         assert_eq!(items[0].0, "E");
         assert!(items[0].1.starts_with("[этап] Этап «планирование»: нельзя писать реализацию"), "{items:?}");
@@ -4900,7 +4999,7 @@ mod tests {
         assert!(items[0].1.contains("с пронумерованными вариантами ответа («1. вариант А, 2. вариант Б»)"), "{items:?}");
         assert!(VALIDATOR_PROMPT.contains("Для E нарушение"), "{VALIDATOR_PROMPT}");
 
-        let items = check_items(&test_invariants(), &Task { stage: Stage::Execution, ..Task::default() });
+        let items = check_items(&plan_on(), &test_invariants(), &Task { stage: Stage::Execution, ..Task::default() });
         let ids: Vec<&str> = items.iter().map(|(id, _)| id.as_str()).collect();
         assert_eq!(ids, ["I1", "I3", "E"], "выключенный I2 не проверяется, E — последним");
         assert!(items[2].1.contains("«выполнение»: нельзя объявлять задачу проверенной"), "{items:?}");
@@ -4917,7 +5016,7 @@ mod tests {
         // Нарушен E — в разборе шаблон отказа с тем, чего не хватает для
         // перехода, той же фразой, что у кода перехода.
         let task = Task { plan: vec![], ..Task::default() };
-        let items = check_items(&[], &task);
+        let items = check_items(&plan_on(), &[], &task);
         let text = retry_message(&[Violation { id: "E".to_string(), quote: "fn main".to_string(), why: "код".to_string() }], &items, &task);
         assert!(text.contains("- E ([этап] Этап «планирование»"), "{text}");
         assert!(
@@ -4927,7 +5026,7 @@ mod tests {
         // На планировании разбор подсказывает, как чинить формат плана.
         assert!(text.contains("оформи тот же план блоком ```plan"), "{text}");
         let later = Task { stage: Stage::Execution, ..Task::default() };
-        let text = retry_message(&[Violation { id: "E".to_string(), quote: "готово".to_string(), why: "рано".to_string() }], &check_items(&[], &later), &later);
+        let text = retry_message(&[Violation { id: "E".to_string(), quote: "готово".to_string(), why: "рано".to_string() }], &check_items(&plan_on(), &[], &later), &later);
         assert!(!text.contains("оформи тот же план"), "вне планирования подсказки про формат нет: {text}");
     }
 
@@ -4964,6 +5063,40 @@ mod tests {
         assert_eq!(cerebras_effort("gpt-oss-120b", "none"), "low");
         assert_eq!(cerebras_effort("gpt-oss-120b", "high"), "high");
         assert_eq!(cerebras_effort("qwen-3.8-27b", "none"), "none");
+    }
+
+    /// Настройки чата с включённым режимом планирования — поведение до O8.
+    fn plan_on() -> Settings {
+        Settings { plan_mode: true, ..Settings::default() }
+    }
+
+    /// Без режима планирования инструменты доступны на любом этапе, с ним —
+    /// только на выполнении.
+    #[test]
+    fn tools_follow_the_plan_mode() {
+        for stage in Stage::ALL {
+            let task = Task { stage, ..Task::default() };
+            assert!(tools_allowed(&Settings::default(), &task), "план выключен: {stage:?}");
+            assert_eq!(tools_allowed(&plan_on(), &task), stage == Stage::Execution, "{stage:?}");
+        }
+    }
+
+    /// Без плана нет пункта E; без включённых инвариантов (или с выключенным
+    /// слоем) список пуст — и валидатор не зовётся.
+    #[test]
+    fn nothing_to_check_without_plan_and_invariants() {
+        let off = Settings::default();
+        assert!(!off.plan_mode, "по умолчанию план выключен");
+        assert!(check_items(&off, &[], &Task::default()).is_empty());
+        let ids: Vec<String> = check_items(&off, &test_invariants(), &Task::default()).into_iter().map(|(id, _)| id).collect();
+        assert_eq!(ids, ["I1", "I3"], "инварианты без E");
+        let mut layer_off = off.clone();
+        layer_off.layers.invariants = false;
+        assert!(check_items(&layer_off, &test_invariants(), &Task::default()).is_empty(), "слой инвариантов выключен");
+        let mut plan_layer_off = plan_on();
+        plan_layer_off.layers.invariants = false;
+        let ids: Vec<String> = check_items(&plan_layer_off, &test_invariants(), &Task::default()).into_iter().map(|(id, _)| id).collect();
+        assert_eq!(ids, ["E"]);
     }
 
     /// Два инварианта включены, один выключен — как в панели после щелчка
@@ -5046,7 +5179,7 @@ mod tests {
 
     #[test]
     fn the_validator_request_is_strict_and_short() {
-        let items = check_items(&test_invariants(), &Task::default());
+        let items = check_items(&plan_on(), &test_invariants(), &Task::default());
         let body = validator_body(Provider::Cerebras, "qwen-3.8-27b", &items, "вопрос", "ответ");
         assert_eq!(body["stream"], false);
         assert_eq!(body["temperature"], 0.0);
@@ -5117,7 +5250,7 @@ mod tests {
         // строка разбора его всё равно называет — пусть и без текста.
         let mut invariants = test_invariants();
         invariants[1].enabled = true;
-        let items = check_items(&invariants, &Task::default());
+        let items = check_items(&plan_on(), &invariants, &Task::default());
         let text = retry_message(&dirty.violations, &items, &Task::default());
         assert!(text.contains("- I2 ([архитектура] Контроллер — ESP32-C3) — «q» — w"), "{text}");
         assert!(text.contains("откажи по шаблону"), "{text}");
