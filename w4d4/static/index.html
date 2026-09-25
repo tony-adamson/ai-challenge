@@ -120,6 +120,12 @@
   .pill-logo svg { height: 16px; width: auto; display: block; }
   .pill-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pill > svg { flex: none; color: var(--fg-subtle); }
+  /* «План» и уровень рассуждения в композере — маленькие пилюли. */
+  .pill[hidden] { display: none; }
+  .pill.mini { flex: none; min-width: 0; padding: 4px 10px; font: 500 12px/16px var(--font-sans); color: var(--fg-muted); }
+  .pill.mini[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent-line); color: var(--fg-strong); }
+  .pill.mini select { min-width: 0; border: 0; outline: 0; background: transparent; color: var(--fg-strong);
+    font: inherit; padding: 0; cursor: pointer; }
   .stage-chip { flex: none; border: 1px solid var(--accent-line); background: var(--accent-soft);
     color: var(--fg-strong); border-radius: var(--r-full); padding: 4px 10px; cursor: pointer;
     font: 500 12px/16px var(--font-sans); white-space: nowrap; }
@@ -827,7 +833,7 @@
       </div>
     </div>
     <div class="gap"></div>
-    <button class="stage-chip" id="stage-chip" title="">этап: —</button>
+    <button class="stage-chip" id="stage-chip" title="" hidden>этап: —</button>
     <button class="ctx-mini" id="ctx-mini" title="Контекст">
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke-width="2.5">
         <circle class="track" cx="9" cy="9" r="7"/>
@@ -889,6 +895,10 @@
             </button>
           </div>
         </div>
+        <!-- Виды на настройки чата, как поповер модели: меняют те же поля и
+             сохраняются тем же путём. -->
+        <button class="pill mini" id="plan-toggle" aria-pressed="false" title="Режим планирования: план → утверждение → выполнение">План</button>
+        <label class="pill mini" id="effort-pill" title="Уровень рассуждения"><span class="mem-label">Рассуждение:</span><select id="effort-quick"></select></label>
         <div class="gap"></div>
         <span class="est" id="est">≈ 0 ток. · оценка</span>
         <button class="send" id="send" title="Отправить">
@@ -3107,6 +3117,7 @@ function fallbackSettings() {
     layers: { invariants: true, instructions: true, long_term: true, task: true, working: true },
     keep_last: 6,
     summarize_every: 10,
+    plan_mode: false,
   };
 }
 
@@ -3154,6 +3165,17 @@ function fillReasoning(providerId, value) {
   const p = providerById(providerId);
   $('effort').innerHTML = p.reasoning_levels.map(r => `<option value="${r.value}">${r.label}</option>`).join('');
   $('effort').value = p.reasoning_levels.some(r => r.value === value) ? value : p.reasoning_levels[0].value;
+  $('effort-quick').innerHTML = $('effort').innerHTML;
+  $('effort-quick').value = $('effort').value;
+  // Выбирать не из чего — пилюля только занимала бы место.
+  $('effort-pill').hidden = p.reasoning_levels.length < 2;
+}
+
+// Без режима планирования этапов у чата нет — чип этапа в шапке прячется.
+let planMode = false;
+function renderPlanToggle() {
+  $('plan-toggle').setAttribute('aria-pressed', String(planMode));
+  $('stage-chip').hidden = !planMode;
 }
 
 function renderNotes() {
@@ -3204,6 +3226,8 @@ function applySettings(s) {
   $('provider').value = s.provider;
   fillModels(s.provider, s.model);
   fillReasoning(s.provider, s.reasoning);
+  planMode = !!s.plan_mode;
+  renderPlanToggle();
   $('temp').value = s.temperature;
   $('temp-v').textContent = Number(s.temperature).toFixed(1);
   $('compression').checked = !!s.router_compression;
@@ -3247,6 +3271,7 @@ function currentSettings() {
     // настройки чата в отказ 400.
     keep_last: clampInt($('keep-last').value, 1, 50, 6),
     summarize_every: clampInt($('summarize-every').value, 2, 50, 10),
+    plan_mode: planMode,
   };
 }
 
@@ -3681,8 +3706,8 @@ async function ask() {
     } else if (name === 'phase') {
       showPhase(bot, data);
     } else if (name === 'content') {
-      // Текст приходит одним событием, уже проверенный: правило этапа
-      // валидатор проверяет всегда, поэтому стрима нет ни в одном чате.
+      // Текст приходит одним событием, уже проверенный (или без проверки,
+      // если проверять было нечего): стрима нет ни в одном чате.
       bot.msg.classList.remove('waiting');
       answer += data;
       paintBot(bot, answer);
@@ -4007,7 +4032,9 @@ $('provider').addEventListener('change', () => {
   saveSettings();
 });
 $('model').addEventListener('change', () => { renderNotes(); renderPanel(); saveSettings(); });
-$('effort').addEventListener('change', saveSettings);
+$('effort').addEventListener('change', () => { $('effort-quick').value = $('effort').value; saveSettings(); });
+$('effort-quick').addEventListener('change', () => { $('effort').value = $('effort-quick').value; saveSettings(); });
+$('plan-toggle').addEventListener('click', () => { planMode = !planMode; renderPlanToggle(); saveSettings(); });
 $('compression').addEventListener('change', saveSettings);
 $('strategy').addEventListener('change', () => {
   // Смена стратегии ничего из файла не удаляет: пересказ остаётся на месте,
