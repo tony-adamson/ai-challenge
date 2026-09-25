@@ -1590,6 +1590,13 @@ fn task_layer_on(settings: &Settings) -> bool {
     settings.layers.task && settings.plan_mode
 }
 
+/// Закрыть подключение хода, если оно было открыто.
+async fn close_conn(conn: Option<Result<crate::mcp::Client, String>>) {
+    if let Some(Ok(client)) = conn {
+        crate::mcp::close(client).await;
+    }
+}
+
 /// Инструменты MCP: в режиме планирования — только на этапе выполнения, без
 /// него — на любом ходу.
 pub fn tools_allowed(settings: &Settings, task: &Task) -> bool {
@@ -2284,6 +2291,9 @@ pub struct Agent {
     /// Занятые чаты. Занятость на чат, а не на агента: два разных чата
     /// могут отвечать одновременно, один и тот же — нет.
     busy: Mutex<HashSet<String>>,
+    /// Каталог MCP-инструментов: берётся один раз и живёт до первой ошибки
+    /// подключения — сервер не трогаем на ходах, где инструменты не вызваны.
+    tools: Mutex<Option<Vec<rmcp::model::Tool>>>,
 }
 
 impl Agent {
@@ -2308,7 +2318,7 @@ impl Agent {
             .timeout(TIMEOUT)
             .build()
             .map_err(|e| format!("не удалось создать HTTP-клиент: {e}"))?;
-        Ok(Agent { client, keys, busy: Mutex::new(HashSet::new()) })
+        Ok(Agent { client, keys, busy: Mutex::new(HashSet::new()), tools: Mutex::new(None) })
     }
 
     pub fn is_available(&self, provider: Provider) -> bool {
@@ -2507,8 +2517,9 @@ impl Agent {
         // Ошибка первого черновика — обычная ошибка хода: показать нечего.
         let mut messages = messages.to_vec();
         let (draft, sel_reasoning, draft_final, metrics, traces, sel_total) =
-            if tools_allowed(settings, task) {
-                self.github_draft(provider, key, settings, &mut messages, tx).await?
+            // Нет каталога — ход идёт обычным ответом без инструментов.
+            if let Some(tools) = self.draft_tools(settings, task).await {
+                self.github_draft(provider, key, settings, &mut messages, tools, tx).await?
             } else {
                 let (text, reasoning, metrics) =
                     self.stream(provider, key, settings, &messages, None).await?;
@@ -2824,6 +2835,40 @@ impl Agent {
             })
     }
 
+    /// Каталог для хода: `None`, если инструменты не положены или сервер
+    /// недоступен (тогда кэш не заполняется — следующий ход попробует снова).
+    async fn draft_tools(&self, settings: &Settings, task: &Task) -> Option<Vec<rmcp::model::Tool>> {
+        if !tools_allowed(settings, task) {
+            return None;
+        }
+        let cached = self.tools.lock().unwrap().clone();
+        if cached.is_some() {
+            return cached;
+        }
+        let listed = match crate::mcp::connect(&crate::mcp::watch_url()).await {
+            Ok(client) => {
+                let listed = tokio::time::timeout(Duration::from_secs(5), client.list_all_tools()).await;
+                crate::mcp::close(client).await;
+                match listed {
+                    Ok(Ok(tools)) => Ok(tools),
+                    Ok(Err(error)) => Err(error.to_string()),
+                    Err(_) => Err("Тайм-аут каталога MCP".to_string()),
+                }
+            }
+            Err(error) => Err(error),
+        };
+        match listed {
+            Ok(tools) => {
+                *self.tools.lock().unwrap() = Some(tools.clone());
+                Some(tools)
+            }
+            Err(error) => {
+                eprintln!("MCP недоступен: инструменты в этом ходе отключены: {error}");
+                None
+            }
+        }
+    }
+
     /// Модель получает каталог нашего MCP-сервера и сама решает, нужен ли вызов.
     /// Цикл по раундам (§8.4): до 5 отвеченных вызовов за ход, не больше 6
     /// запросов к модели; запрос после лимита идёт без `tools`.
@@ -2838,16 +2883,13 @@ impl Agent {
         key: &str,
         settings: &Settings,
         messages: &mut Vec<Message>,
+        tools: Vec<rmcp::model::Tool>,
         tx: &mpsc::Sender<Event>,
     ) -> Result<(String, Vec<String>, String, Metrics, Vec<crate::mcp::ToolTrace>, Usage), String> {
         use rmcp::model::{CallToolRequestParams, CallToolResult};
         let started = Instant::now();
-        let client = crate::mcp::connect(&crate::mcp::watch_url()).await?;
-        let tools = match tokio::time::timeout(Duration::from_secs(5), client.list_all_tools()).await {
-            Ok(Ok(tools)) => tools,
-            Ok(Err(error)) => { crate::mcp::close(client).await; return Err(error.to_string()); }
-            Err(_) => { crate::mcp::close(client).await; return Err("Тайм-аут каталога MCP".into()); }
-        };
+        // Подключение для вызовов — лениво, при первом `tool_calls`, одно на ход.
+        let mut conn: Option<Result<crate::mcp::Client, String>> = None;
         let known: Vec<String> = tools.iter().map(|tool| tool.name.to_string()).collect();
         let mut answered = 0usize;
         let mut had_result = false;
@@ -2880,18 +2922,18 @@ impl Agent {
                 response.json::<Value>().await.map_err(describe)
             }.await {
                 Ok(value) => value,
-                Err(error) => { crate::mcp::close(client).await; return Err(error); }
+                Err(error) => { close_conn(conn).await; return Err(error); }
             };
             let message = value["choices"][0]["message"].clone();
             let usage = usage_from(&value["usage"]);
             let decision = match decide_round(&message, answered, had_result, request_no, &catalog) {
                 Ok(decision) => decision,
-                Err(error) => { crate::mcp::close(client).await; return Err(error); }
+                Err(error) => { close_conn(conn).await; return Err(error); }
             };
             // Без `tool_calls` — финальный текст этого раунда, цикл окончен.
             // Его рассуждение — финал: уйдёт событием из `guard`, как в w4d3.
             if decision.actions.is_empty() {
-                crate::mcp::close(client).await;
+                close_conn(conn).await;
                 let (text, _) = parse_completion(&value)
                     .ok_or("Модель не вернула ответ или вызов инструмента")?;
                 let reasoning = message["reasoning_content"].as_str().unwrap_or("").to_string();
@@ -2935,14 +2977,26 @@ impl Agent {
                 let result = match refused {
                     Some(error) => CallToolResult::structured_error(json!({"error": error})),
                     None => {
+                        if conn.is_none() {
+                            let connected = crate::mcp::connect(&crate::mcp::watch_url()).await;
+                            if connected.is_err() {
+                                *self.tools.lock().unwrap() = None;
+                            }
+                            conn = Some(connected);
+                        }
                         let params = CallToolRequestParams::new(name)
                             .with_arguments(arguments.as_object().cloned().unwrap_or_default());
-                        match tokio::time::timeout(Duration::from_secs(60), client.call_tool(params)).await {
-                            Ok(Ok(result)) => result,
-                            Ok(Err(error)) => CallToolResult::structured_error(
-                                json!({"error": error.to_string()})),
-                            Err(_) => CallToolResult::structured_error(
-                                json!({"error": "MCP-инструмент не ответил за 60 секунд"})),
+                        match conn.as_ref().unwrap() {
+                            Err(error) => CallToolResult::structured_error(
+                                json!({"error": format!("MCP недоступен: {error}")})),
+                            Ok(client) => match tokio::time::timeout(
+                                Duration::from_secs(60), client.call_tool(params)).await {
+                                Ok(Ok(result)) => result,
+                                Ok(Err(error)) => CallToolResult::structured_error(
+                                    json!({"error": error.to_string()})),
+                                Err(_) => CallToolResult::structured_error(
+                                    json!({"error": "MCP-инструмент не ответил за 60 секунд"})),
+                            },
                         }
                     }
                 };
@@ -2963,7 +3017,7 @@ impl Agent {
                 break;
             }
         }
-        crate::mcp::close(client).await;
+        close_conn(conn).await;
         let (text, reasoning, mut final_metrics) =
             self.stream(provider, key, settings, messages, None).await?;
         add_selection_total(&mut final_metrics, sel_total);
