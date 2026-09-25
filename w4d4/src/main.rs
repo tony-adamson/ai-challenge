@@ -230,6 +230,7 @@ async fn start() -> Result<(), String> {
         .route("/static/deepseek.svg", get(deepseek_logo))
         .route("/static/openrouter.svg", get(openrouter_logo))
         .route("/api/state", get(state))
+        .route("/api/files/{name}", get(report_file))
         .route("/api/mcp/tools", get(mcp_tools))
         .route("/api/github/tools", get(github_tools))
         .route("/api/watches", get(watches))
@@ -295,6 +296,37 @@ async fn deepseek_logo() -> ([(header::HeaderName, &'static str); 1], &'static s
 
 async fn openrouter_logo() -> ([(header::HeaderName, &'static str); 1], &'static str) {
     ([(header::CONTENT_TYPE, "image/svg+xml")], include_str!("../static/openrouter.svg"))
+}
+
+/// Скачивание отчёта из `data/reports/`: имя проходит через общую
+/// проверку `watch::report_name` и должно совпасть побайтово — без `.md`
+/// отдаётся 400. Путь всегда `<dir>/<report_name>`: выйти за папку нельзя,
+/// потому что в имени только латиница в нижнем регистре, цифры, `-`, `_` и `.md`.
+fn report_response(dir: &std::path::Path, name: &str) -> Response {
+    let file = match crate::watch::report_name(name) {
+        Ok(file) if file == name => file,
+        _ => return (StatusCode::BAD_REQUEST, "неверное имя файла").into_response(),
+    };
+    let body = match std::fs::read(dir.join(&file)) {
+        Ok(body) => body,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return (StatusCode::NOT_FOUND, "файл не найден").into_response()
+        }
+        Err(error) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("не прочитать {file}: {error}")).into_response(),
+    };
+    let disposition = format!("attachment; filename=\"{file}\"");
+    axum::http::Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/markdown; charset=utf-8")
+        .header(header::CONTENT_DISPOSITION, disposition)
+        .body(axum::body::Body::from(body))
+        .unwrap_or_else(|error| {
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("не отдать {file}: {error}")).into_response()
+        })
+}
+
+async fn report_file(Path(name): Path<String>) -> Response {
+    report_response(std::path::Path::new(crate::watch::REPORTS_DIR), &name)
 }
 
 fn not_found() -> Response {
