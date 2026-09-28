@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Исследователь · вход</title>
+<link rel="stylesheet" href="/static/colors_and_type.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: var(--bg); color: var(--fg); font-family: var(--font-sans); padding: 16px; }
+  form { width: 100%; max-width: 340px; background: var(--surface); border: var(--hairline);
+    border-radius: var(--r-md); padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-3); }
+  h1 { margin: 0; font: 600 20px/28px var(--font-sans); color: var(--fg-strong); }
+  p { margin: 0; color: var(--fg-muted); font-size: 14px; }
+  input { font: 500 24px/32px var(--font-mono, monospace); letter-spacing: 0.3em; text-align: center;
+    padding: 10px; border: var(--hairline); border-radius: var(--r-sm); background: var(--bg); color: var(--fg); }
+  button { font: 500 14px/20px var(--font-sans); padding: 10px; border: 0; border-radius: var(--r-sm);
+    background: var(--violet); color: var(--fg-on-brand); cursor: pointer; }
+  .error { color: var(--danger); font-size: 14px; min-height: 20px; }
+</style>
+</head>
+<body>
+<form method="post" action="/login">
+  <h1>Исследователь</h1>
+  <p>Код из приложения-аутентификатора</p>
+  <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required autofocus aria-label="Шестизначный код">
+  <div class="error" role="alert">{{error}}</div>
+  <button type="submit">Войти</button>
+</form>
+</body>
+</html>

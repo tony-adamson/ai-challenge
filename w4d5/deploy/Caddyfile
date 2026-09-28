@@ -1,0 +1,5 @@
+# /etc/caddy/Caddyfile на сервере. TLS-сертификат Caddy получает сам.
+challenge.hoapps.dev {
+	encode gzip
+	reverse_proxy 127.0.0.1:8799
+}
