@@ -2,7 +2,7 @@
 use std::time::Duration;
 
 use rmcp::{
-    model::{ClientCapabilities, ClientConfig, Implementation, ProtocolVersion},
+    model::{ClientCapabilities, ClientConfig, Implementation, Tool},
     transport::StreamableHttpClientTransport,
     ClientLifecycleMode, ClientServiceExt,
 };
@@ -15,18 +15,46 @@ const TIMEOUT: Duration = Duration::from_secs(20);
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ToolTrace {
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server: Option<String>,
     pub arguments: Value,
     pub result: Option<Value>,
 }
 
 pub const DEFAULT_WATCH_URL: &str = "http://127.0.0.1:8800/mcp";
 
+pub struct Server {
+    pub name: &'static str,
+    pub env: &'static str,
+    pub default_url: &'static str,
+    pub allow: Option<&'static [&'static str]>,
+}
+
+pub const SERVERS: [Server; 3] = [
+    Server { name: "research", env: "WATCH_MCP_URL", default_url: DEFAULT_WATCH_URL, allow: None },
+    Server { name: "deepwiki", env: "DEEPWIKI_MCP_URL", default_url: "https://mcp.deepwiki.com/mcp", allow: Some(&["ask_wiki_question"]) },
+    Server { name: "notify", env: "NOTIFY_MCP_URL", default_url: "http://127.0.0.1:8800/notify", allow: None },
+];
+
+pub fn server_url(server: &Server) -> String {
+    std::env::var(server.env).ok().filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| server.default_url.into())
+}
+
+pub fn merge_catalogs(listed: Vec<(&str, Vec<Tool>)>) -> Vec<(String, Tool)> {
+    listed.into_iter().flat_map(|(name, tools)| {
+        let server = SERVERS.iter().find(|s| s.name == name);
+        tools.into_iter().filter(move |tool| server.is_some_and(|s|
+            s.allow.is_none_or(|allow| allow.contains(&tool.name.as_ref()))))
+            .map(move |tool| (name.to_string(), tool))
+    }).collect()
+}
+
 pub type Client = rmcp::service::RunningService<rmcp::RoleClient, ClientConfig>;
 
 /// Адрес собственного MCP-сервера наблюдений (`--mcp-server`).
 pub fn watch_url() -> String {
-    std::env::var("WATCH_MCP_URL").ok().filter(|v| !v.trim().is_empty())
-        .unwrap_or_else(|| DEFAULT_WATCH_URL.into())
+    server_url(&SERVERS[0])
 }
 
 pub async fn connect(url: &str) -> Result<Client, String> {
@@ -39,10 +67,7 @@ pub async fn connect(url: &str) -> Result<Client, String> {
         TIMEOUT,
         info.serve_with_lifecycle(
             transport,
-            ClientLifecycleMode::Auto {
-                preferred_versions: vec![ProtocolVersion::V_2026_07_28],
-                legacy_version: Some(ProtocolVersion::V_2025_11_25),
-            },
+            ClientLifecycleMode::Initialize,
         ),
     )
     .await
@@ -106,8 +131,36 @@ mod tests {
     use axum::{http::StatusCode, response::IntoResponse, routing::post, Json, Router};
     use std::sync::{Arc, Mutex};
 
+    #[test]
+    fn catalogs_preserve_server_order_and_allowlist() {
+        let tools = |names: &[&str]| names.iter().map(|name|
+            Tool::new(name.to_string(), "fixture", serde_json::Map::new())).collect();
+        let research = ["search_repositories", "summarize", "save_to_file", "watch_list", "watch_create", "watch_delete", "watch_summary"];
+        let wiki = ["ask_wiki_question", "read_wiki_contents", "read_wiki_structure"];
+        let notify = ["send_telegram"];
+        let merged = merge_catalogs(vec![
+            ("research", tools(&research)), ("deepwiki", tools(&wiki)), ("notify", tools(&notify)),
+        ]);
+        let pairs: Vec<_> = merged.iter().map(|(s, t)| (s.as_str(), t.name.as_ref())).collect();
+        assert_eq!(pairs, research.iter().map(|n| ("research", *n))
+            .chain([("deepwiki", "ask_wiki_question"), ("notify", "send_telegram")]).collect::<Vec<_>>());
+        assert_eq!(pairs.len(), 9);
+        let partial = merge_catalogs(vec![("research", tools(&research)),
+            ("unknown", tools(&["unexpected"])), ("notify", tools(&notify))]);
+        let partial_pairs: Vec<_> = partial.iter().map(|(s, t)| (s.as_str(), t.name.as_ref())).collect();
+        assert_eq!(partial_pairs, research.iter().map(|n| ("research", *n))
+            .chain([("notify", "send_telegram")]).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn old_traces_have_no_server_and_none_is_omitted() {
+        let trace: ToolTrace = serde_json::from_value(json!({"name":"x","arguments":{},"result":null})).unwrap();
+        assert_eq!(trace.server, None);
+        assert!(serde_json::to_value(trace).unwrap().get("server").is_none());
+    }
+
     // Независимый JSON-RPC fixture: проверяем реальный HTTP-шов SDK,
-    // включая fallback к initialize и две страницы каталога.
+    // включая initialize и две страницы каталога.
     #[tokio::test]
     async fn discovers_real_catalog_pages_over_http() {
         let seen = Arc::new(Mutex::new(Vec::new()));
