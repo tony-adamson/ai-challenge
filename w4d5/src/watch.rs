@@ -627,12 +627,18 @@ pub async fn serve() -> Result<(), String> {
     });
     let listener = tokio::net::TcpListener::bind(&addr).await
         .map_err(|e| format!("не удалось занять {addr}: {e}"))?;
-    println!("MCP-сервер наблюдений: http://{addr}/mcp · база {path} · тик {} с", TICK.as_secs());
+    println!("MCP-сервер наблюдений: http://{addr}/mcp · http://{addr}/notify · база {path} · тик {} с", TICK.as_secs());
     let deepseek_key = std::env::var("DEEPSEEK_API_KEY").ok().filter(|v| !v.trim().is_empty());
     let watcher = Watcher::new(github, db,
         crate::agent::Provider::DeepSeek.base_url().to_string(),
         deepseek_key, PathBuf::from(REPORTS_DIR), SUMMARIZE_TIMEOUT);
-    axum::serve(listener, router(watcher)).await.map_err(|e| format!("сервер остановился: {e}"))
+    let telegram = crate::summary::Telegram::from_env();
+    if telegram.is_none() {
+        eprintln!("notify: Telegram не настроен — send_telegram будет отвечать ошибкой");
+    }
+    let notifier = crate::notify::Notifier::new(telegram);
+    axum::serve(listener, router(watcher).merge(crate::notify::router(notifier)))
+        .await.map_err(|e| format!("сервер остановился: {e}"))
 }
 
 #[cfg(test)]
