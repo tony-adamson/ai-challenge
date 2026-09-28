@@ -174,7 +174,7 @@ async fn start() -> Result<(), String> {
         println!("{}", serde_json::to_string_pretty(&catalog).map_err(|e| e.to_string())?);
         return Ok(());
     }
-    println!("AI Advent · w4d5 — исследователь: наблюдения за GitHub по расписанию через MCP");
+    println!("AI Advent · w4d5 — исследователь: оркестрация нескольких MCP-серверов");
     match dotenvy::dotenv() {
         Ok(path) => println!("  ✓ .env прочитан: {}", path.display()),
         Err(_) => println!("  · .env не найден, беру переменные окружения"),
@@ -193,7 +193,9 @@ async fn start() -> Result<(), String> {
     let store = Store::open(DATA_DIR)?;
     let auth = Arc::new(auth::Auth::new(&secret, auth::SESSIONS_FILE)?);
     println!("  ✓ вход по TOTP, сессии: {}", auth::SESSIONS_FILE);
-    println!("  ✓ MCP-сервер наблюдений: {}", mcp::watch_url());
+    for server in &mcp::SERVERS {
+        println!("  ✓ MCP-сервер {}: {}", server.name, mcp::server_url(server));
+    }
     match summary::Telegram::from_env() {
         Some(_) => println!("  ✓ сводка в Telegram раз в {} мин", summary::every().as_secs() / 60),
         None => println!("  · сводка раз в {} мин без Telegram (нет TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID)",
