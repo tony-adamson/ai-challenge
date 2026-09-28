@@ -1588,6 +1588,8 @@ function paintSverka(bot, line) {
 // рядом с шариком, пока идёт ход.
 function toolStatus(name) {
   if (name === 'search_repositories') return 'Ищет на GitHub…';
+  if (name === 'ask_wiki_question') return 'Спрашивает DeepWiki…';
+  if (name === 'send_telegram') return 'Отправляет в Telegram…';
   if (name === 'summarize') return 'Пишет обзор…';
   if (name === 'save_to_file') return 'Сохраняет файл…';
   if (typeof name === 'string' && name.startsWith('watch_')) return 'Работает с наблюдениями…';
@@ -1666,7 +1668,7 @@ function stepLi(t) {
   const dot = document.createElement('span');
   dot.className = 'dot';
   const code = document.createElement('code');
-  code.textContent = t.name;
+  code.textContent = t.server ? `${t.server} · ${t.name}` : t.name;
   const st = document.createElement('span');
   st.className = 'st';
   st.textContent = !t.result ? 'выполняется…' : (t.result.isError ? 'ошибка' : 'готово');

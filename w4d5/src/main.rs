@@ -26,6 +26,7 @@ mod agent;
 mod auth;
 mod github;
 mod mcp;
+mod notify;
 mod store;
 mod summary;
 mod watch;
