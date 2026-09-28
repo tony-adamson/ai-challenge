@@ -1,0 +1,8 @@
+[package]
+name = "w5d1"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fastembed = { version = "7.1", default-features = false, features = ["ort-download-binaries-native-tls", "hf-hub-native-tls"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
