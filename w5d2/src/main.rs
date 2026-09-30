@@ -423,9 +423,10 @@ fn model_cache(here: &Path) -> PathBuf {
 }
 
 fn onnx_ready(cache: &Path) -> bool {
+    // try_new тянет из hf-hub не только веса, но и конфиги токенизатора.
+    const NEEDED: [&str; 5] = ["model.onnx", "tokenizer.json", "config.json", "special_tokens_map.json", "tokenizer_config.json"];
+    let mut found = [false; NEEDED.len()];
     let mut pending = vec![cache.join("models--intfloat--multilingual-e5-small")];
-    let mut onnx = false;
-    let mut tokenizer = false;
     while let Some(dir) = pending.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else { continue };
         for entry in entries.flatten() {
@@ -434,14 +435,12 @@ fn onnx_ready(cache: &Path) -> bool {
                 pending.push(path);
                 continue;
             }
-            match path.file_name().and_then(|name| name.to_str()) {
-                Some("model.onnx") => onnx = true,
-                Some("tokenizer.json") => tokenizer = true,
-                _ => {}
+            if let Some(i) = path.file_name().and_then(|n| n.to_str()).and_then(|n| NEEDED.iter().position(|x| *x == n)) {
+                found[i] = true;
             }
         }
     }
-    onnx && tokenizer
+    found.iter().all(|f| *f)
 }
 
 fn embed(model: &mut TextEmbedding, texts: &[String]) -> Res<Vec<Vec<f32>>> {
