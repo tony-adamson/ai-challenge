@@ -1,0 +1,32 @@
+{
+  "name": "w5d5-rag-studio",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/src/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "npm run build && node --test dist/tests/*.test.js && /opt/homebrew/bin/python3 -m unittest discover -s tests -p \"*_test.py\"",
+    "web": "node dist/src/web.js",
+    "desktop": "electron dist/src/main.js",
+    "package": "npm run build && electron-packager . RagStudio --platform=darwin --arch=arm64 --out=release --overwrite --no-asar --ignore=\"^/(release|node_modules/.cache|data|tests|specs|scripts/eval.ts)\"",
+    "eval:live": "npm run build && node dist/scripts/eval.js",
+    "check:phase1": "npm run build && node --test dist/tests/server.test.js dist/tests/store.test.js",
+    "check:phase2": "npm run build && node --test dist/tests/memory.test.js",
+    "check:phase3": "npm run build && node --test dist/tests/rag.test.js && /opt/homebrew/bin/python3 -m unittest discover -s tests -p \"*_test.py\"",
+    "check:phase4": "npm run build && node --test dist/tests/clients.test.js",
+    "check:phase5": "npm run build && node --test dist/tests/chat.test.js",
+    "check:phase6": "npm run build && node --test dist/tests/artifacts.test.js",
+    "check:phase7": "npm run build && node --test dist/tests/claude.test.js",
+    "check:phase8": "npm run build && node --test dist/tests/server.test.js dist/tests/chat.test.js dist/tests/artifacts.test.js dist/tests/claude.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.3.0"
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "typescript": "7.0.2",
+    "@types/node": "25.9.9",
+    "@electron/packager": "20.3.0"
+  }
+}
