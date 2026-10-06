@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local LLM — локальный чат</title>
+<style>
+:root{color-scheme:light;--ink:#202c29;--muted:#7b8781;--line:#e7ebe5;--green:#287b57;--pale:#edf4ed;--paper:#fbfcf8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:14px}
+*{box-sizing:border-box}
+body{margin:0;height:100vh;display:grid;grid-template-columns:260px minmax(390px,1fr);background:var(--paper);color:var(--ink)}
+button,textarea{font:inherit}
+button{cursor:pointer;border:0;border-radius:8px;padding:11px 14px;font-weight:600;transition:background .15s}
+button:disabled{cursor:not-allowed;opacity:.45}
+button:focus-visible{outline:2px solid var(--green);outline-offset:3px}
+.primary{background:var(--green);color:#fff}
+.primary:hover:not(:disabled){background:#1b6243}
+.quiet{background:transparent;color:var(--muted)}
+.quiet:hover{background:var(--pale)}
+.sidebar{background:#1f2d27;color:#e5eee7;padding:29px 20px;display:flex;flex-direction:column;gap:26px;min-height:0;overflow-y:auto}
+.brand{display:flex;align-items:center;gap:11px;font-size:19px;font-weight:650;letter-spacing:-.5px}
+.brand-mark{font-family:Georgia,serif;font-size:30px;background:#c6dfb6;color:#233629;width:38px;height:38px;line-height:38px;text-align:center;border-radius:11px}
+.brand small,.side-foot small{display:block;color:#93a699;font-size:11px;font-weight:400;letter-spacing:0;margin-top:5px}
+.new-chat{background:#354b3e;color:#e8f1e7;text-align:left;border:1px solid #47604f}
+.new-chat:hover:not(:disabled){background:#3d5547}
+.sidebar h2{font-size:10px;letter-spacing:1.5px;color:#8aa08f;margin:0 0 11px 2px;font-weight:650}
+.card{background:#263830;border:1px solid #344a3d;border-radius:10px;padding:14px;font-size:12px;line-height:1.7;color:#b9c8bd}
+.card b{color:#ecf4ec;font-weight:600}
+.models{display:grid;gap:7px}
+.model-option{background:#263830;border:1px solid #344a3d;color:#b9c8bd;text-align:left;font-weight:400;font-size:12px;line-height:1.55;padding:11px 13px}
+.model-option b{display:block;color:#ecf4ec;font-size:13px;font-weight:600}
+.model-option:hover:not(:disabled){background:#2d4237}
+.model-option[aria-pressed=true]{background:#314739;border-color:#9fc888;box-shadow:inset 3px 0 0 #9fc888}
+.card-note{font-size:10px;color:#8da594;margin:9px 2px 0}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat{background:#263830;border:1px solid #344a3d;border-radius:10px;padding:12px}
+.stat strong{display:block;font-size:20px;color:#ecf4ec;font-weight:600;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+.stat span{font-size:10px;color:#8da594}
+.side-foot{margin-top:auto;font-size:11px;color:#aac0b0;padding-top:18px;border-top:1px solid #3a4940}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#c76b52;margin-right:7px}
+.dot.on{background:#9fc888;box-shadow:0 0 0 3px #9fc88833}
+main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.chat-header{min-height:96px;display:flex;gap:12px;align-items:center;justify-content:space-between;padding:24px 40px;border-bottom:1px solid var(--line)}
+.eyebrow{font-size:9px;letter-spacing:1.8px;font-weight:650;color:var(--muted);margin-bottom:8px}
+h1{font-size:19px;letter-spacing:-.5px;margin:0;font-weight:600}
+.badge{font-size:10px;color:#6b8071;border:1px solid #dce5d9;padding:6px 8px;border-radius:6px;white-space:nowrap}
+#notice{margin:0 40px;font-size:12px;line-height:1.55;color:#8f4937}
+#notice:not(:empty){padding:12px 0}
+#messages{flex:1;overflow-y:auto;padding:30px 40px}
+.welcome{max-width:540px;margin:24px auto;color:var(--muted);line-height:1.7}
+.welcome h2{font-size:28px;color:var(--ink);font-weight:500;letter-spacing:-1px;margin:8px 0}
+.welcome-icon{color:var(--green);font-size:30px}
+.examples{display:grid;gap:8px;margin-top:22px}
+.examples button{background:#fff;border:1px solid var(--line);color:var(--ink);font-weight:400;text-align:left;line-height:1.5}
+.examples button:hover{border-color:#bfd3bf;background:#f6faf3}
+.examples small{display:block;font-size:9px;letter-spacing:1.4px;color:var(--green);font-weight:650;margin-bottom:3px}
+.message{margin:0 auto 27px;max-width:780px}
+.message-label{font-size:10px;letter-spacing:1.2px;font-weight:600;color:#738071;margin-bottom:10px}
+.message-content{overflow-wrap:anywhere;line-height:1.75}
+.message-content p{margin:0 0 10px}
+.message-content ul,.message-content ol{margin:0 0 10px;padding-left:22px}
+.message-content h3{font-size:15px;margin:16px 0 8px}
+.message-content code{font-family:ui-monospace,SFMono-Regular,monospace;font-size:12px;background:#eef2ea;padding:1px 5px;border-radius:4px}
+.message-content pre{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto}
+.message-content pre code{background:none;padding:0}
+.message.user .message-content{background:#edf1e9;border-radius:12px;padding:14px 20px;white-space:pre-wrap}
+.message.pending .message-content::after{content:"▍";color:var(--green);animation:blink 1s steps(2) infinite}
+@keyframes blink{to{opacity:0}}
+.meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.meta span{font-size:10px;color:#61785f;background:var(--pale);border-radius:5px;padding:4px 7px;font-variant-numeric:tabular-nums}
+.error{font-size:12px;color:#a45f43;margin-top:8px}
+.composer-area{padding:0 40px 18px;border-top:1px solid var(--line)}
+.operation-bar{min-height:33px;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--green)}
+.operation-bar button{font-size:11px;padding:5px 8px}
+#ask-form{background:#fff;border:1px solid #d8e1d3;border-radius:12px;padding:14px 16px 12px;box-shadow:0 4px 16px #233a2010;display:flex;align-items:flex-end;gap:8px;max-width:860px;margin:0 auto}
+#question{flex:1;border:0;resize:none;padding:0;outline:0;line-height:1.6;min-width:0;background:transparent;color:var(--ink)}
+#send{font-size:11px;white-space:nowrap;padding:11px 13px}
+.composer-hint{margin:10px auto 0;font-size:10px;color:#95a18f;max-width:860px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+[hidden]{display:none!important}
+@media(max-width:780px){body{grid-template-columns:1fr;height:auto;min-height:100vh}.sidebar{gap:16px}.chat-header,#messages,.composer-area{padding-left:16px;padding-right:16px}}
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="brand"><span class="brand-mark">l</span><div>Local LLM<small>Модель на этом Mac</small></div></div>
+  <button id="new-chat" class="new-chat">＋ Новый разговор</button>
+  <div><h2>МОДЕЛЬ</h2><div id="models" class="models"></div><p class="card-note">MLX · Apple M2 · 16 GB · размышления выключены. Смена модели начинает новый разговор.</p></div>
+  <div><h2 id="stats-title">СКОРОСТЬ</h2><div class="stats">
+    <div class="stat"><strong id="s-speed">—</strong><span>ток/с · последний</span></div>
+    <div class="stat"><strong id="s-ttft">—</strong><span>до 1-го токена</span></div>
+    <div class="stat"><strong id="s-avg">—</strong><span>ток/с · среднее</span></div>
+    <div class="stat"><strong id="s-total">0</strong><span>токенов всего</span></div>
+  </div></div>
+  <div class="side-foot"><span id="dot" class="dot"></span><span id="server-state">Проверяем сервер…</span><small>localhost:8080 · без интернета</small></div>
+</aside>
+<main>
+  <header class="chat-header"><div><div class="eyebrow">ЛОКАЛЬНАЯ МОДЕЛЬ · БЕЗ ОБЛАКА</div><h1 id="title">Чат с Qwen</h1></div><span class="badge">mlx_lm.server</span></header>
+  <div id="notice" role="status" aria-live="polite"></div>
+  <section id="messages" aria-label="История разговора"></section>
+  <footer class="composer-area">
+    <div class="operation-bar"><span id="progress"></span><button id="stop" class="quiet" hidden>Остановить</button></div>
+    <form id="ask-form"><label class="sr-only" for="question">Сообщение</label><textarea id="question" rows="3" placeholder="Спроси что-нибудь…"></textarea><button id="send" class="primary" type="submit">Отправить ↑</button></form>
+    <p class="composer-hint">⌘ + Enter — отправить. Ответ генерируется на этом компьютере.</p>
+  </footer>
+</main>
+<script>
+const SERVER = 'http://localhost:8080';
+const MODELS = [
+  { id: 'mlx-community/Qwen3.5-9B-MLX-4bit', name: 'Qwen3.5-9B', info: 'Alibaba · 9B · 4-bit · 5.6 GB' },
+  { id: 'mlx-community/gemma-4-e4b-it-4bit', name: 'Gemma 4 E4B', info: 'Google · эффективно 4B · 4-bit · 4.8 GB' },
+];
+let model = MODELS[0];
+const EXAMPLES = [
+  ['ПРОСТОЙ · ФАКТ', 'Какая столица Австралии? Ответь одним словом.'],
+  ['СРЕДНИЙ · ОБЪЯСНЕНИЕ', 'Объясни в 3–4 предложениях, чем процесс отличается от потока в операционной системе.'],
+  ['СЛОЖНЫЙ · РАССУЖДЕНИЕ', 'Поезд выехал из A в 9:40 со скоростью 80 км/ч. Через 30 минут из B навстречу ему выехал второй поезд со скоростью 100 км/ч. Расстояние между A и B — 400 км. Во сколько поезда встретятся? Реши по шагам.'],
+];
+const $ = id => document.getElementById(id);
+const question = $('question');
+let history = [];          // {role, content, meta?, error?}
+let controller = null;     // AbortController текущего ответа
+// Счётчики по каждой модели отдельно — чтобы сравнивать скорость.
+const stats = Object.fromEntries(MODELS.map(m => [m.id, { tokens: 0, seconds: 0, speed: null, ttft: null }]));
+let loaded = MODELS[0].id; // сервер держит в памяти одну модель; первая с ним — Qwen
+
+function el(tag, cls = '', text = '') { const n = document.createElement(tag); n.className = cls; n.textContent = text; return n; }
+const escape = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+// Минимальный Markdown и LaTeX-разметка Qwen: без него ответ про поезда превращается в кашу из ** и $.
+function inline(s) {
+  return s.replace(/\$(?=\S)([^$\n]*?\S)\$(?!\d)/g, (_, m) => m.replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, '$1/$2').replace(/\\times/g, '×').replace(/\\cdot/g, '·').replace(/\\approx/g, '≈').replace(/_\{([^}]*)\}/g, '<sub>$1</sub>').replace(/\\text\{([^}]*)\}/g, '$1'))
+    .replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<i>$2</i>');
+}
+function markdown(text) {
+  const out = []; let list = null;
+  const close = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  const parts = escape(text).split(/```\w*\n?/);
+  parts.forEach((part, i) => {
+    if (i % 2) { close(); out.push(`<pre><code>${part}</code></pre>`); return; }
+    for (const line of part.split('\n')) {
+      const ul = line.match(/^\s*[*-]\s+(.*)/), ol = line.match(/^\s*(\d+)[.)]\s+(.*)/), h = line.match(/^#{1,4}\s+(.*)/);
+      // Номер берём из текста: Qwen разделяет пункты абзацами, и новый <ol> иначе снова начнётся с 1.
+      if (ul || ol) { const kind = ul ? 'ul' : 'ol'; if (list !== kind) { close(); out.push(ol ? `<ol start="${ol[1]}">` : '<ul>'); list = kind; } out.push(`<li>${inline(ul ? ul[1] : ol[2])}</li>`); }
+      else if (h) { close(); out.push(`<h3>${inline(h[1])}</h3>`); }
+      else if (line.trim()) { close(); out.push(`<p>${inline(line)}</p>`); }
+      else close();
+    }
+  });
+  close(); return out.join('');
+}
+
+function render() {
+  const box = $('messages');
+  // Прокручиваем вниз, только если пользователь и так внизу — иначе во время генерации не перечитать начало.
+  const stick = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+  box.replaceChildren();
+  if (!history.length) {
+    const w = el('div', 'welcome');
+    w.append(el('div', 'welcome-icon', '✳'), el('h2', '', 'О чём спросим модель?'), el('p', '', model.name + ' работает прямо на этом Mac: без облака, ключей и интернета. Начни с примера или напиши свой вопрос.'));
+    const ex = el('div', 'examples');
+    for (const [label, text] of EXAMPLES) { const b = el('button'); b.type = 'button'; b.append(el('small', '', label), text); b.onclick = () => ask(text); ex.append(b); }
+    w.append(ex); box.append(w); return;
+  }
+  for (const m of history) {
+    const item = el('article', 'message ' + m.role + (m.pending ? ' pending' : ''));
+    item.append(el('div', 'message-label', m.role === 'user' ? 'ТЫ' : m.model.toUpperCase() + ' · ЛОКАЛЬНО'));
+    const content = el('div', 'message-content');
+    if (m.role === 'user') content.textContent = m.content; else content.innerHTML = markdown(m.content);
+    item.append(content);
+    if (m.meta) { const meta = el('div', 'meta'); for (const t of m.meta) meta.append(el('span', '', t)); item.append(meta); }
+    if (m.error) item.append(el('div', 'error', m.error));
+    box.append(item);
+  }
+  if (stick) box.scrollTop = box.scrollHeight;
+}
+
+function renderModels() {
+  $('models').replaceChildren(...MODELS.map(m => {
+    const b = el('button', 'model-option'); b.type = 'button'; b.setAttribute('aria-pressed', String(m === model));
+    b.append(el('b', '', m.name), m.info); b.disabled = !!controller;
+    b.onclick = () => { if (m === model || controller) return; model = m; history = []; $('notice').textContent = ''; renderModels(); render(); };
+    return b;
+  }));
+  $('title').textContent = 'Чат с ' + model.name;
+  $('stats-title').textContent = 'СКОРОСТЬ · ' + model.name.toUpperCase();
+  const st = stats[model.id];
+  $('s-speed').textContent = st.speed === null ? '—' : fmt(st.speed); $('s-ttft').textContent = st.ttft === null ? '—' : fmt(st.ttft) + ' с';
+  $('s-total').textContent = st.tokens; $('s-avg').textContent = st.seconds ? fmt(st.tokens / st.seconds) : '—';
+}
+
+function busy(on) {
+  $('send').disabled = on; $('new-chat').disabled = on; $('stop').hidden = !on;
+  for (const b of document.querySelectorAll('.model-option')) b.disabled = on;
+  if (!on) $('progress').textContent = '';
+}
+const fmt = n => n.toFixed(1).replace('.', ',');
+
+async function ask(text) {
+  text = text.trim(); if (!text || controller) return;
+  $('notice').textContent = ''; question.value = '';
+  const asked = { role: 'user', content: text };
+  history.push(asked);
+  const answer = { role: 'assistant', content: '', pending: true, model: model.name };
+  history.push(answer); render(); busy(true);
+  const switching = loaded !== model.id;
+  $('progress').textContent = switching ? 'Загружаем ' + model.name + ' в память…' : 'Модель читает вопрос…';
+  controller = new AbortController();
+  const started = performance.now(); let first = 0, chunks = 0, usage = null;
+  try {
+    const response = await fetch(SERVER + '/v1/chat/completions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+      body: JSON.stringify({
+        model: model.id, stream: true, stream_options: { include_usage: true }, max_tokens: 2048,
+        chat_template_kwargs: { enable_thinking: false },
+        messages: history.filter(m => !m.pending && !m.error && !m.unanswered).map(({ role, content }) => ({ role, content })),
+      }),
+    });
+    if (!response.ok) throw new Error('Сервер модели ответил ошибкой ' + response.status + '.');
+    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read(); if (done) break;
+      buffer += value; const lines = buffer.split('\n'); buffer = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+        const data = JSON.parse(line.slice(6));
+        if (data.usage) usage = data.usage;
+        const delta = data.choices?.[0]?.delta?.content;
+        if (delta) {
+          if (!first) { first = performance.now(); loaded = model.id; }
+          chunks++; answer.content += delta;
+          const live = chunks / Math.max((performance.now() - first) / 1000, 0.001);
+          $('progress').textContent = `Генерация · ${chunks} ток. · ${fmt(live)} ток/с`;
+          render();
+        }
+      }
+    }
+    const end = performance.now();
+    const tokens = usage?.completion_tokens ?? chunks;
+    const genSec = first ? (end - first) / 1000 : 0, ttft = first ? (first - started) / 1000 : 0;
+    const speed = genSec > 0 ? tokens / genSec : 0;
+    answer.meta = [`${tokens} токенов`, `${fmt(speed)} ток/с`, `первый токен ${fmt(ttft)} с` + (switching ? ' (с загрузкой модели)' : ''), `всего ${fmt((end - started) / 1000)} с`];
+    const st = stats[model.id];
+    st.tokens += tokens; st.seconds += genSec; st.speed = speed; st.ttft = ttft;
+  } catch (error) {
+    // Вопрос без ответа тоже убираем из контекста: две реплики user подряд шаблон Gemma отвергает.
+    asked.unanswered = true;
+    answer.error = error.name === 'AbortError' ? 'Генерация остановлена.'
+      : error instanceof TypeError ? 'Нет связи с моделью на localhost:8080. Запусти mlx_lm.server (см. README) и повтори вопрос.'
+      : error.message;
+  } finally {
+    answer.pending = false; controller = null; busy(false); renderModels(); render(); question.focus();
+  }
+}
+
+async function checkServer() {
+  let on = false;
+  try { on = (await fetch(SERVER + '/v1/models')).ok; } catch {}
+  $('dot').className = 'dot' + (on ? ' on' : '');
+  $('server-state').textContent = on ? 'Модель на связи' : 'Модель загружается или сервер не запущен';
+}
+
+$('ask-form').addEventListener('submit', e => { e.preventDefault(); ask(question.value); });
+question.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); ask(question.value); } });
+$('stop').addEventListener('click', () => controller?.abort());
+$('new-chat').addEventListener('click', () => { history = []; $('notice').textContent = ''; render(); question.focus(); });
+renderModels(); render(); checkServer(); setInterval(checkServer, 5000);
+</script>
+</body>
+</html>
