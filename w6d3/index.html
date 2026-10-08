@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'">
+<title>RAG Lab</title>
+<link rel="stylesheet" href="colors_and_type.css">
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { display: grid; grid-template-columns: 280px 1fr; overflow: hidden; }
+  button { font: inherit; cursor: pointer; }
+  button:disabled { cursor: default; opacity: .5; }
+  .muted { color: var(--fg-muted); }
+  .subtle { color: var(--fg-subtle); font-size: 12px; line-height: 16px; }
+  .caption { font: 600 11px/16px var(--font-sans); letter-spacing: .06em; text-transform: uppercase; color: var(--fg-subtle); margin: 0 0 8px; }
+
+  /* ---------- Сайдбар ---------- */
+  .sidebar { background: var(--surface-alt); border-right: var(--hairline); padding: 20px 16px; display: flex; flex-direction: column; gap: 22px; overflow: auto; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand .orb { width: 44px; height: 44px; }
+  .brand b { display: block; font: 700 18px/24px var(--font-sans); color: var(--fg-strong); letter-spacing: -.01em; }
+  .brand span { font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
+  .model { width: 100%; text-align: left; border: var(--hairline); background: var(--surface); border-radius: var(--r-sm); padding: 10px 12px; margin-bottom: 8px; color: var(--fg-muted); font-size: 12px; line-height: 16px; transition: border-color var(--dur-2); }
+  .model b { display: block; font-size: 14px; line-height: 20px; color: var(--fg-strong); }
+  .model[aria-pressed="true"] { border-color: var(--violet); box-shadow: inset 3px 0 0 var(--violet); }
+  .state { display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 20px; margin-bottom: 4px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--disabled); flex: none; }
+  .dot.ok { background: var(--success); }
+  .dot.warn { background: var(--warning); }
+  .dot.bad { background: var(--danger); }
+  .kv { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 13px; line-height: 20px; margin: 0; }
+  .kv dt { color: var(--fg-muted); }
+  .kv dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--fg-strong); font-weight: 600; text-align: right; }
+  .sidebar footer { margin-top: auto; }
+
+  /* ---------- Основная область ---------- */
+  main { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+  .tabs { display: flex; gap: 4px; padding: 14px 28px 0; border-bottom: var(--hairline); background: var(--bg); }
+  .tab { border: 0; background: none; padding: 10px 14px; font-weight: 600; font-size: 14px; color: var(--fg-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tab[aria-selected="true"] { color: var(--fg-strong); border-bottom-color: var(--violet); }
+  .panel { flex: 1; overflow: auto; padding: 24px 28px 40px; }
+  .panel[hidden] { display: none; }
+  .wrap { max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+
+  .hero { display: flex; align-items: center; gap: 20px; }
+  .hero .orb { width: 96px; height: 96px; }
+  .hero h1 { font: 650 24px/32px var(--font-sans); letter-spacing: -.02em; }
+  .hero p { color: var(--fg-muted); font-size: 14px; line-height: 20px; }
+  .ask { display: flex; gap: 10px; align-items: flex-end; }
+  .ask textarea { flex: 1; resize: vertical; min-height: 56px; max-height: 200px; font: 400 15px/22px var(--font-sans); padding: 12px 14px; border: var(--hairline-strong); border-radius: var(--r-sm); background: var(--surface); color: var(--fg); }
+  .primary { border: 0; background: var(--sage-800); color: var(--fg-on-brand); border-radius: var(--r-sm); padding: 12px 18px; font-weight: 600; font-size: 14px; }
+  .quiet { border: var(--hairline); background: var(--surface); color: var(--fg-strong); border-radius: var(--r-sm); padding: 10px 14px; font-weight: 600; font-size: 13px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { border: var(--hairline); background: var(--surface); border-radius: var(--r-full); padding: 6px 12px; font-size: 13px; line-height: 18px; color: var(--fg-muted); text-align: left; }
+  .chip:hover:not(:disabled) { background: var(--surface-mist); color: var(--fg-strong); }
+  .chip.neg { border-style: dashed; }
+  .progress-line { min-height: 20px; font-size: 13px; color: var(--fg-muted); }
+  .notice { background: var(--danger-bg); color: var(--danger); border-radius: var(--r-sm); padding: 10px 14px; font-size: 14px; }
+  .notice[hidden] { display: none; }
+
+  .card { background: var(--surface); border: var(--hairline); border-radius: var(--r-md); padding: 18px 20px; }
+  .card h3 { font: 600 15px/22px var(--font-sans); margin: 0 0 10px; color: var(--fg-strong); }
+  .card section + section { border-top: var(--hairline); margin-top: 14px; padding-top: 14px; }
+  .answer-text { font-size: 16px; line-height: 26px; white-space: pre-line; }
+  .badge { display: inline-block; font: 600 11px/16px var(--font-sans); letter-spacing: .04em; text-transform: uppercase; padding: 3px 8px; border-radius: var(--r-xs); background: var(--brand-tint); color: var(--sage-900); margin-bottom: 10px; }
+  .badge.calm { background: var(--info-bg); color: var(--blue); }
+  .badge.fail { background: var(--warning-bg); color: var(--warning); }
+  .sources { margin: 0; padding-left: 18px; font-size: 13px; line-height: 20px; color: var(--fg-muted); }
+  .sources code { font-size: 12px; color: var(--fg-subtle); }
+  blockquote { margin: 0 0 10px; padding: 8px 12px; border-left: 3px solid var(--violet); background: var(--surface-mist); border-radius: 0 var(--r-xs) var(--r-xs) 0; font-size: 14px; line-height: 21px; }
+  blockquote cite { display: block; font-style: normal; font-size: 12px; color: var(--fg-subtle); margin-top: 4px; }
+  .verdict { display: flex; gap: 10px; align-items: baseline; font-size: 14px; line-height: 20px; }
+  .pill { flex: none; font-weight: 600; font-size: 12px; padding: 2px 10px; border-radius: var(--r-full); background: var(--soft-stone); color: var(--fg-muted); }
+  .pill.supported { background: var(--success-bg); color: var(--success); }
+  .pill.unsupported { background: var(--danger-bg); color: var(--danger); }
+  .pill.undetermined, .pill.unavailable { background: var(--warning-bg); color: var(--warning); }
+  .metrics { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+  .metrics b { color: var(--fg-strong); }
+  details summary { cursor: pointer; font-size: 13px; color: var(--fg-muted); }
+  .cands { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12px; line-height: 18px; }
+  .cands li { display: grid; grid-template-columns: 52px 1fr auto; gap: 10px; padding: 3px 0; color: var(--fg-muted); }
+  .cands li.in { color: var(--fg-strong); }
+
+  /* ---------- Сравнение ---------- */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .toolbar select { font: inherit; font-size: 13px; padding: 8px 10px; border: var(--hairline); border-radius: var(--r-sm); background: var(--surface); }
+  .bar { height: 6px; background: var(--soft-stone); border-radius: var(--r-full); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--violet); transition: width var(--dur-3); }
+  .models { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .models h2 { font: 650 18px/26px var(--font-sans); margin: 0 0 10px; }
+  .models .card + .card { margin-top: 10px; }
+  .models .card { padding: 14px 16px; }
+  .models .card h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--fg-subtle); margin-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 18px; background: var(--surface); border: var(--hairline); border-radius: var(--r-md); overflow: hidden; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: var(--hairline); }
+  th { font-weight: 600; color: var(--fg-subtle); font-size: 12px; background: var(--surface-alt); }
+  tr:last-child td { border-bottom: 0; }
+  td .q { color: var(--fg-strong); }
+  .runs { display: flex; flex-wrap: wrap; gap: 4px; }
+  .run { font-size: 11px; line-height: 16px; padding: 1px 6px; border-radius: var(--r-xs); background: var(--soft-stone); color: var(--fg-muted); white-space: nowrap; }
+  .run.answer { background: var(--success-bg); color: var(--success); }
+  .run.unknown { background: var(--info-bg); color: var(--blue); }
+  .run.failed, .run.error { background: var(--warning-bg); color: var(--warning); }
+  .empty { color: var(--fg-muted); font-size: 14px; }
+
+  /* ---------- Шарик (эталон — w4d5/static/index.html и docs/orb-prototype.html) ---------- */
+  .orb { display: inline-block; flex: none; position: relative; border-radius: 50%; }
+  .orb svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .orb .body { transform-box: fill-box; transform-origin: 50% 60%; transition: transform .4s var(--ease-standard); }
+  .orb .glow { opacity: 0; transition: opacity .4s var(--ease-standard); }
+  .orb .eyes { transform-box: view-box; transition: transform .35s var(--ease-standard); }
+  .orb .eye { transform-box: fill-box; transform-origin: 50% 50%; transition: transform .12s ease-in; }
+  .orb .body-fill { transition: fill .4s var(--ease-standard), opacity .4s var(--ease-standard); }
+  .orb.blink .eye { transform: scaleY(.08); }
+  .orb[data-state="think"] .body { animation: orb-breathe 2.4s var(--ease-standard) infinite; }
+  .orb[data-state="think"] .glow { opacity: 1; animation: orb-glow 2.4s var(--ease-standard) infinite; }
+  .orb[data-state="think"] .eyes { animation: orb-wander 3.2s var(--ease-standard) infinite; }
+  .orb[data-state="tool"] .eyes { transform: translate(-3px, 9px); animation: orb-read 1.6s linear infinite; }
+  .orb[data-state="tool"] .glow { opacity: .6; }
+  .orb.hop .body { animation: orb-hop .45s var(--ease-standard); }
+  .orb[data-state="check"] .eyes { transform: translate(-4px, 3px); }
+  .orb[data-state="check"] .eye { transform: scaleY(.42); }
+  .orb[data-state="retry"] .body-fill { fill: url(#orb-warm); }
+  .orb[data-state="retry"] .eyes { animation: orb-glance 1.4s var(--ease-standard) infinite; }
+  .orb[data-state="done"] .body { transform: scale(.94); }
+  /* «Не знаю»: спокойно опущенный взгляд, без анимации — отказ не ошибка. */
+  .orb[data-state="calm"] .body { transform: scale(.96); }
+  .orb[data-state="calm"] .body-fill { opacity: .82; }
+  .orb[data-state="calm"] .eyes { transform: translate(-6px, 7px); }
+  .orb[data-state="calm"] .eye { transform: scaleY(.55); }
+  @keyframes orb-breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.045, 1.03); } }
+  @keyframes orb-glow { 0%,100% { opacity: .35; } 50% { opacity: .9; } }
+  @keyframes orb-wander { 0%,100% { transform: translate(0,0); } 25% { transform: translate(5px,-5px); } 50% { transform: translate(-7px,-4px); } 75% { transform: translate(2px,-7px); } }
+  @keyframes orb-read { 0% { transform: translate(-7px, 9px); } 45% { transform: translate(3px, 9px); } 50% { transform: translate(-7px, 10px); } 100% { transform: translate(-7px, 9px); } }
+  @keyframes orb-hop { 0% { transform: translateY(0) scale(1); } 30% { transform: translateY(-8%) scale(.97,1.04); } 60% { transform: translateY(0) scale(1.05,.95); } 100% { transform: translateY(0) scale(1); } }
+  @keyframes orb-glance { 0%,60%,100% { transform: translate(0,0); } 70%,90% { transform: translate(-12px,1px); } }
+  @media (prefers-reduced-motion: reduce) { .orb *, .orb.hop .body { animation: none !important; } }
+</style>
+</head>
+<body>
+<!-- Градиенты шарика: один скрытый <svg><defs> на всё приложение. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <radialGradient id="orb-grad" cx="35%" cy="28%" r="80%">
+      <stop offset="0" stop-color="#B9AEFF"/><stop offset=".55" style="stop-color:var(--violet)"/><stop offset="1" stop-color="#6A58E8"/>
+    </radialGradient>
+    <radialGradient id="orb-warm" cx="35%" cy="28%" r="80%">
+      <stop offset="0" stop-color="#FFD9A8"/><stop offset=".55" stop-color="#E7A15A"/><stop offset="1" stop-color="#B7791F"/>
+    </radialGradient>
+    <radialGradient id="orb-glow" cx="50%" cy="50%" r="50%">
+      <stop offset=".55" style="stop-color:var(--violet)" stop-opacity=".45"/><stop offset="1" style="stop-color:var(--violet)" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+</svg>
+
+<aside class="sidebar">
+  <div class="brand"><span class="orb" data-state="idle"></span><div><b>RAG Lab</b><span>индекс, поиск и модель — на этом Mac</span></div></div>
+  <div>
+    <p class="caption">Модель ответа</p>
+    <div id="models"></div>
+  </div>
+  <div>
+    <p class="caption">Состояние</p>
+    <div class="state"><i class="dot" id="dot-server"></i><span id="st-server">Проверяю сервер модели…</span></div>
+    <div class="state"><i class="dot" id="dot-net"></i><span id="st-net">Проверяю сеть…</span></div>
+    <div class="state"><i class="dot" id="dot-judge"></i><span id="st-judge">Судья DeepSeek…</span></div>
+  </div>
+  <div>
+    <p class="caption">Последний ответ</p>
+    <dl class="kv" id="last"><dt>пока нет</dt><dd></dd></dl>
+  </div>
+  <footer class="subtle">Индекс w5d1 · эмбеддинги multilingual-e5-small · генерация mlx_lm.server · в сеть ходят судья и проверка сети</footer>
+</aside>
+
+<main>
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="ask" aria-selected="true">Вопрос</button>
+    <button class="tab" role="tab" data-tab="bench" aria-selected="false">Сравнение</button>
+  </nav>
+
+  <section class="panel" id="tab-ask">
+    <div class="wrap">
+      <div class="hero">
+        <span class="orb" data-state="idle"></span>
+        <div><h1>Спроси о материалах челленджа</h1><p id="ask-status">Ответ только по найденным фрагментам, с дословными цитатами. Нет фрагментов — честное «не знаю».</p></div>
+      </div>
+      <form class="ask" id="ask-form">
+        <textarea id="question" rows="2" placeholder="Например: где узнать, сколько стоил вызов модели?" aria-label="Вопрос"></textarea>
+        <button class="primary" id="send" type="submit">Спросить</button>
+      </form>
+      <div class="chips" id="chips"></div>
+      <div class="progress-line" id="ask-progress"></div>
+      <div class="notice" id="ask-error" hidden></div>
+      <article class="card" id="answer" hidden></article>
+    </div>
+  </section>
+
+  <section class="panel" id="tab-bench" hidden>
+    <div class="wrap">
+      <div class="toolbar">
+        <label class="muted" for="runs">Прогонов на вопрос</label>
+        <select id="runs"><option value="3" selected>3</option><option value="1">1</option></select>
+        <button class="primary" id="bench-start">Запустить сравнение</button>
+        <button class="quiet" id="bench-stop" hidden>Остановить</button>
+        <span class="subtle" id="bench-file"></span>
+      </div>
+      <div class="bar"><i id="bench-bar"></i></div>
+      <div class="progress-line" id="bench-progress"></div>
+      <div class="notice" id="bench-error" hidden></div>
+      <div class="models" id="bench-cards"></div>
+      <div id="bench-table"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const MODELS = [
+  { key: 'qwen', name: 'Qwen 9B', info: 'Qwen3.5-9B · 4-bit · Alibaba' },
+  { key: 'gemma', name: 'Gemma E4B', info: 'Gemma 4 E4B · 4-bit · Google' },
+];
+const EXAMPLES = [
+  'Где узнать, сколько долларов стоил конкретный вызов модели?',
+  'Что станет с задачей на паузе, если перезапустить сервер, а потом продолжить?',
+  'Влияет ли температура на правильность ответа в задачах с единственным верным решением?',
+  'Как часто уходит дайджест по наблюдениям в Telegram и что приходит, если ничего не поменялось?',
+];
+const NEGATIVE = 'Какой PIN-код у моей банковской карты?';
+const ORB_SVG = '<svg viewBox="0 0 100 100" aria-hidden="true"><circle class="glow" cx="50" cy="52" r="62" fill="url(#orb-glow)"/>'
+  + '<g class="body"><circle class="body-fill" cx="50" cy="50" r="46" fill="url(#orb-grad)"/>'
+  + '<ellipse cx="36" cy="27" rx="13" ry="7" fill="#fff" opacity=".28" transform="rotate(-28 36 27)"/><g class="eyes">'
+  + '<g transform="rotate(-18 58 35)"><rect class="eye" x="54" y="25" width="8.5" height="21" rx="4.25" style="fill:var(--sage-900)"/></g>'
+  + '<g transform="rotate(-18 73 33)"><rect class="eye" x="69" y="23" width="8.5" height="21" rx="4.25" style="fill:var(--sage-900)"/></g>'
+  + '</g></g></svg>';
+
+const $ = id => document.getElementById(id);
+let model = 'qwen';
+let job = null;          // 'ask' | 'bench' | null — какой процесс сейчас идёт
+let bench = null;        // { questions, runs, total, samples } текущего прогона
+let lastVerdict = null;  // последний вердикт судьи — для индикатора «судья»
+let online = null;
+
+function el(tag, cls = '', text = '') { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== '') n.textContent = text; return n; }
+const fmtMs = v => v == null ? '—' : v >= 1000 ? (v / 1000).toFixed(1).replace('.', ',') + ' с' : Math.round(v) + ' мс';
+const fmtNum = (v, d = 1) => v == null ? '—' : v.toFixed(d).replace('.', ',');
+const ratio = r => !r ? '—' : r.of ? `${r.n}/${r.of} · ${Math.round(100 * r.n / r.of)}%` : '—';
+
+/* ---------- Шарик ---------- */
+document.querySelectorAll('.orb').forEach(o => { o.innerHTML = ORB_SVG; });
+function setOrb(state) {
+  document.querySelectorAll('.orb').forEach(o => {
+    if (state === 'hop') { o.classList.remove('hop'); void o.offsetWidth; o.classList.add('hop'); return; }
+    o.dataset.state = state;
+  });
+}
+// Моргание: случайно 2.6–5.8 с, иногда двойное, только в спокойных состояниях.
+(function blink() {
+  setTimeout(() => {
+    document.querySelectorAll('.orb').forEach(o => {
+      if (!['idle', 'think', 'done'].includes(o.dataset.state)) return;
+      o.classList.add('blink'); setTimeout(() => o.classList.remove('blink'), 130);
+      if (Math.random() < 0.25) setTimeout(() => { o.classList.add('blink'); setTimeout(() => o.classList.remove('blink'), 120); }, 260);
+    });
+    blink();
+  }, 2600 + Math.random() * 3200);
+})();
+
+/* ---------- Сайдбар ---------- */
+function renderModels() {
+  const box = $('models'); box.replaceChildren();
+  for (const m of MODELS) {
+    const b = el('button', 'model'); b.type = 'button'; b.setAttribute('aria-pressed', String(m.key === model)); b.disabled = !!job;
+    b.append(el('b', '', m.name), el('span', '', m.info));
+    b.onclick = () => { model = m.key; renderModels(); };
+    box.append(b);
+  }
+}
+function setDot(id, cls, text) { $('dot-' + id).className = 'dot ' + cls; $('st-' + id).textContent = text; }
+async function refreshStatus() {
+  try {
+    const s = await window.rag.status();
+    online = s.online;
+    setDot('server', s.server ? 'ok' : 'warn', s.server ? 'Сервер модели на связи' : 'Сервер модели запускается…');
+    if (!s.binary) setDot('server', 'bad', 'Нет бинарника w6d3 — собери cargo build --release');
+    setDot('net', s.online ? 'ok' : 'warn', s.online ? 'Онлайн' : 'Офлайн — RAG работает локально');
+    if (!s.online) setDot('judge', 'bad', 'Судья недоступен (нет сети)');
+    else if (lastVerdict?.status === 'unavailable') setDot('judge', 'warn', 'Судья: ' + lastVerdict.text);
+    else setDot('judge', 'ok', 'Судья DeepSeek доступен');
+  } catch (e) { setDot('server', 'bad', 'Нет связи с приложением: ' + e.message); }
+}
+function renderLast(m, modelKey) {
+  const dl = $('last'); dl.replaceChildren();
+  const rows = [['модель', MODELS.find(x => x.key === modelKey)?.name ?? modelKey], ['поиск', fmtMs(m.retrieval_ms)], ['загрузка модели', fmtMs(m.load_ms)],
+    ['первый токен', fmtMs(m.ttft_ms)], ['скорость', m.tok_s == null ? '—' : fmtNum(m.tok_s) + ' ток/с'], ['генерация', fmtMs(m.total_ms)], ['попыток', String(m.attempts)]];
+  for (const [k, v] of rows) dl.append(el('dt', '', k), el('dd', '', v));
+}
+
+/* ---------- Вкладки ---------- */
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.setAttribute('aria-selected', String(x === t)));
+  $('tab-ask').hidden = t.dataset.tab !== 'ask';
+  $('tab-bench').hidden = t.dataset.tab !== 'bench';
+  if (t.dataset.tab === 'bench' && !bench) loadLatest();
+});
+
+function busy(kind) {
+  job = kind;
+  $('send').disabled = !!kind; $('bench-start').disabled = !!kind; $('runs').disabled = !!kind;
+  $('bench-stop').hidden = kind !== 'bench';
+  document.querySelectorAll('.chip').forEach(c => { c.disabled = !!kind; });
+  renderModels();
+}
+
+/* ---------- Вопрос ---------- */
+for (const q of [...EXAMPLES, NEGATIVE]) {
+  const c = el('button', 'chip' + (q === NEGATIVE ? ' neg' : ''), q); c.type = 'button';
+  c.onclick = () => { $('question').value = q; ask(); };
+  $('chips').append(c);
+}
+let found = [];
+async function ask() {
+  const q = $('question').value.trim();
+  if (!q || job) return;
+  $('ask-error').hidden = true; $('answer').hidden = true; found = [];
+  $('ask-progress').textContent = 'Ищу фрагменты в индексе…';
+  setOrb('tool'); busy('ask');
+  const error = await window.rag.ask(q, model);
+  if (error) { busy(null); setOrb('idle'); showError('ask', error); }
+}
+$('ask-form').addEventListener('submit', e => { e.preventDefault(); ask(); });
+$('question').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); ask(); } });
+
+function showError(where, text) { $(where + '-error').textContent = text; $(where + '-error').hidden = false; $(where + '-progress').textContent = ''; }
+
+function onAskEvent(e) {
+  const name = MODELS.find(m => m.key === model)?.name;
+  if (e.event === 'retrieve') { found = e.candidates; $('ask-progress').textContent = `Поиск: ${fmtMs(e.ms)}, в контексте ${e.kept} из ${e.candidates.length} кандидатов.`; }
+  else if (e.event === 'load') { setOrb('think'); $('ask-progress').textContent = `Загружаю ${name} в память (при смене модели ~10 с)…`; }
+  else if (e.event === 'generate') { setOrb('think'); $('ask-progress').textContent = `${name} пишет ответ…`; }
+  else if (e.event === 'retry') { setOrb('retry'); $('ask-progress').textContent = 'Цитата не прошла проверку — повторный запрос: ' + e.error; }
+  else if (e.event === 'judge') { setOrb('check'); $('ask-progress').textContent = 'Судья DeepSeek сверяет ответ с цитатами…'; }
+  else if (e.event === 'done') { renderAnswer(e); renderLast(e.metrics, model); $('ask-progress').textContent = ''; setOrb(e.kind === 'answer' ? 'done' : e.kind === 'failed' ? 'retry' : 'calm'); if (e.verdict) lastVerdict = e.verdict; refreshStatus(); }
+  else if (e.event === 'error') { setOrb('idle'); showError('ask', e.message); }
+  else if (e.event === 'stopped') { setOrb('idle'); $('ask-progress').textContent = 'Остановлено.'; }
+}
+
+function renderAnswer(e) {
+  const card = $('answer'); card.replaceChildren(); card.hidden = false;
+  const labels = { answer: ['ответ с проверенными цитатами', ''], below_threshold: ['не знаю: нет релевантных фрагментов', 'calm'], not_in_context: ['не знаю: модель не нашла ответа во фрагментах', 'calm'], failed: ['провал проверки цитат после повтора', 'fail'] };
+  const [label, cls] = labels[e.kind] ?? [e.label, ''];
+  const main = el('section'); main.append(el('span', 'badge ' + cls, label), el('div', 'answer-text', e.text));
+  card.append(main);
+  if (e.sources.length) {
+    const s = el('section'); s.append(el('h3', '', 'Источники'));
+    const ul = el('ul', 'sources');
+    for (const src of e.sources) { const parts = src.split(' · '); const li = el('li', '', parts.slice(0, -1).join(' · ') + ' · '); li.append(el('code', '', parts.at(-1))); ul.append(li); }
+    s.append(ul); card.append(s);
+  }
+  if (e.quotes.length) {
+    const s = el('section'); s.append(el('h3', '', 'Цитаты — дословность проверена кодом'));
+    for (const q of e.quotes) { const b = el('blockquote', '', '«' + q.text + '»'); b.append(el('cite', '', `[${q.chunk}] ${q.chunk_id}`)); s.append(b); }
+    card.append(s);
+  }
+  if (e.verdict) {
+    const s = el('section'); s.append(el('h3', '', 'Судья DeepSeek'));
+    const v = el('div', 'verdict');
+    const short = { supported: 'подтверждено', unsupported: 'не подтверждено', undetermined: 'не определён', unavailable: 'недоступен' }[e.verdict.status];
+    v.append(el('span', 'pill ' + e.verdict.status, short), el('span', 'muted', e.verdict.text.replace(/^[^—(]*(— |\()/, '').replace(/\)$/, '')));
+    s.append(v); card.append(s);
+  }
+  const m = e.metrics, s = el('section'), row = el('div', 'metrics');
+  const add = (k, v) => { const span = el('span', '', k + ' '); span.append(el('b', '', v)); row.append(span); };
+  add('поиск', fmtMs(m.retrieval_ms));
+  if (m.load_ms != null) add('загрузка/прогрев', fmtMs(m.load_ms));
+  add('первый токен', fmtMs(m.ttft_ms)); add('скорость', m.tok_s == null ? '—' : fmtNum(m.tok_s) + ' ток/с');
+  add('генерация', fmtMs(m.total_ms)); add('попыток', String(m.attempts));
+  if (e.retried) add('повтор', 'был');
+  s.append(row);
+  if (found.length) {
+    const d = el('details'); d.append(el('summary', '', `Найденные фрагменты (${found.length})`));
+    const ul = el('ul', 'cands');
+    for (const c of found) { const li = el('li', c.status === 'в контекст' ? 'in' : ''); li.append(el('span', '', c.score.toFixed(3)), el('span', '', `${c.source} · ${c.section}`), el('span', '', c.status)); ul.append(li); }
+    d.append(ul); s.append(d);
+  }
+  card.append(s);
+}
+
+/* ---------- Сравнение ---------- */
+async function loadLatest() {
+  const latest = await window.rag.latest();
+  if (!latest) { $('bench-cards').replaceChildren(el('p', 'empty', 'Сохранённых прогонов нет. Запусти сравнение: 12 вопросов × 2 модели × 3 прогона, около получаса.')); return; }
+  $('bench-file').textContent = `Показан прогон ${latest.file}` + (latest.report.complete === false ? ' — не завершён' : '');
+  renderReport(latest.report);
+}
+$('bench-start').onclick = async () => {
+  if (job) return;
+  const runs = Number($('runs').value);
+  bench = { questions: [], runs, total: 0, samples: [] };
+  $('bench-error').hidden = true; $('bench-file').textContent = ''; $('bench-bar').style.width = '0';
+  $('bench-cards').replaceChildren(); $('bench-table').replaceChildren();
+  $('bench-progress').textContent = 'Запускаю: загрузка индекса и модели эмбеддингов…';
+  busy('bench'); setOrb('tool');
+  const error = await window.rag.bench(runs);
+  if (error) { busy(null); setOrb('idle'); showError('bench', error); }
+};
+$('bench-stop').onclick = () => window.rag.stop();
+
+function onBenchEvent(e) {
+  const name = key => MODELS.find(m => m.key === key)?.name ?? key;
+  if (e.event === 'start') { Object.assign(bench, { questions: e.questions, total: e.total }); $('bench-progress').textContent = 'Поиск по всем вопросам (один раз на вопрос)…'; renderTable(bench.questions, bench.samples, bench.runs); }
+  else if (e.event === 'load') { setOrb('think'); $('bench-progress').textContent = `Прогрев ${name(e.model)}: загрузка весов не входит в замеры…`; }
+  else if (e.event === 'generate') { setOrb('think'); $('bench-progress').textContent = `${name(e.model)} · прогон ${e.run} · вопрос ${e.question} из ${bench.questions.length}`; }
+  else if (e.event === 'progress') { bench.samples.push(e.sample); setOrb('hop'); $('bench-bar').style.width = (100 * e.done / e.total) + '%'; renderTable(bench.questions, bench.samples, bench.runs); }
+  else if (e.event === 'summary') { setOrb('done'); $('bench-progress').textContent = 'Готово. Результат сохранён: ' + e.file; renderReport(e.report); }
+  else if (e.event === 'error') { setOrb('idle'); showError('bench', e.message); }
+  else if (e.event === 'stopped') { setOrb('idle'); $('bench-progress').textContent = `Остановлено на ${bench.samples.length} из ${bench.total}. Частичный результат сохранён.`; }
+}
+
+function renderReport(r) {
+  const box = $('bench-cards'); box.replaceChildren();
+  for (const m of r.models) {
+    const s = r.summary[m.key]; if (!s) continue;
+    const col = el('div'); col.append(el('h2', '', MODELS.find(x => x.key === m.key)?.name ?? m.key));
+    const card = (title, rows) => {
+      const c = el('div', 'card'); c.append(el('h3', '', title));
+      const dl = el('dl', 'kv'); for (const [k, v] of rows) dl.append(el('dt', '', k), el('dd', '', v)); c.append(dl); return c;
+    };
+    const p = (pct, f = fmtMs) => `${f(pct.p50)} / ${f(pct.p95)}`;
+    col.append(
+      card('Качество', [
+        ['цитаты прошли проверку', ratio(s.quotes_verified)],
+        ['судья: подтверждено', ratio(s.judge_supported) + (s.judge_unavailable ? ` (недоступен: ${s.judge_unavailable})` : '')],
+        ['верные «не знаю» (без ответа)', ratio(s.correct_unknown)],
+        ['ложные «не знаю» (есть ответ)', ratio(s.false_unknown)],
+      ]),
+      card('Скорость · p50 / p95', [
+        ['поиск', p(s.retrieval_ms)],
+        ['первый токен', p(s.ttft_ms)],
+        ['ток/с', p(s.tok_s, v => fmtNum(v))],
+        ['полное время ответа', p(s.total_ms)],
+        ['прогрев модели (не в замерах)', fmtMs(r.load_ms?.[m.key])],
+      ]),
+      card('Стабильность', [
+        ['валидный JSON с 1-й попытки', ratio(s.json_first)],
+        ['доля повторов', ratio(s.retried)],
+        ['провал после повтора', ratio(s.failed_after_retry)],
+        ['согласованность прогонов', s.consistent ? ratio(s.consistent) : '— (1 прогон)'],
+        ['ошибки сервера', String(s.errors)],
+      ]),
+    );
+    box.append(col);
+  }
+  renderTable(r.questions, r.samples, r.runs);
+}
+
+function renderTable(questions, samples, runs) {
+  const short = { answer: 'ответ', below_threshold: 'не знаю · порог', not_in_context: 'не знаю', failed: 'провал', error: 'ошибка' };
+  const mark = { supported: ' ✓', unsupported: ' ✗', undetermined: ' ?', unavailable: ' —' };
+  const table = el('table'), head = el('tr');
+  head.append(el('th', '', 'Вопрос'), ...MODELS.map(m => el('th', '', m.name)));
+  table.append(head);
+  for (const q of questions) {
+    const tr = el('tr'), td = el('td');
+    td.append(el('div', 'q', `${q.n}. ${q.question}`), el('div', 'subtle', q.source ? `${q.source} · ${q.section}` : 'ответа в базе нет'));
+    tr.append(td);
+    for (const m of MODELS) {
+      const cell = el('td'), mine = samples.filter(s => s.model === m.key && s.question === q.n), box = el('div', 'runs');
+      for (const s of mine) {
+        const cls = s.kind === 'below_threshold' || s.kind === 'not_in_context' ? 'unknown' : s.kind;
+        const chip = el('span', 'run ' + cls, short[s.kind] + (mark[s.verdict] ?? '') + (s.total_ms != null ? ' · ' + fmtMs(s.total_ms) : ''));
+        chip.title = (s.verdict_text ?? '') + (s.error ? s.error : '') + (s.retried ? ' · был повтор' : '');
+        box.append(chip);
+      }
+      cell.append(box);
+      if (mine.length === runs && runs > 1) {
+        const sig = s => JSON.stringify([s.kind === 'below_threshold' || s.kind === 'not_in_context' ? 'unknown' : s.kind, s.chunks]);
+        cell.append(el('div', 'subtle', mine.every(s => sig(s) === sig(mine[0])) ? 'согласовано' : 'расходится между прогонами'));
+      }
+      tr.append(cell);
+    }
+    table.append(tr);
+  }
+  $('bench-table').replaceChildren(table);
+}
+
+/* ---------- События бинарника ---------- */
+window.rag.onEvent(e => {
+  if (e.event === 'idle') { busy(null); return; }
+  if (job === 'bench') onBenchEvent(e); else onAskEvent(e);
+});
+
+renderModels();
+refreshStatus();
+setInterval(refreshStatus, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "name": "w6d3-rag-lab",
+  "productName": "RAG Lab",
+  "version": "1.0.0",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "cargo build --release && electron .",
+    "package": "sh scripts/package.sh"
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "@electron/packager": "20.3.0"
+  }
+}
