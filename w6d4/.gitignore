@@ -1,0 +1,8 @@
+.fastembed_cache/
+target/
+node_modules/
+release/
+build/
+data/
+.venv/
+config.json

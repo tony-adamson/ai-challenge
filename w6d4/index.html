@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'">
+<title>Книжный исследователь</title>
+<link rel="stylesheet" href="colors_and_type.css">
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { display: grid; grid-template-columns: 280px 1fr; overflow: hidden; }
+  button { font: inherit; cursor: pointer; }
+  button:disabled { cursor: default; opacity: .5; }
+  .muted { color: var(--fg-muted); }
+  .subtle { color: var(--fg-subtle); font-size: 12px; line-height: 16px; }
+  .caption { font: 600 11px/16px var(--font-sans); letter-spacing: .06em; text-transform: uppercase; color: var(--fg-subtle); margin: 0 0 8px; }
+
+  /* ---------- Сайдбар ---------- */
+  .sidebar { background: var(--surface-alt); border-right: var(--hairline); padding: 20px 16px; display: flex; flex-direction: column; gap: 22px; overflow: auto; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand .orb { width: 44px; height: 44px; }
+  .brand b { display: block; font: 700 18px/24px var(--font-sans); color: var(--fg-strong); letter-spacing: -.01em; }
+  .brand span { font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
+  .model { width: 100%; text-align: left; border: var(--hairline); background: var(--surface); border-radius: var(--r-sm); padding: 10px 12px; margin-bottom: 8px; color: var(--fg-muted); font-size: 12px; line-height: 16px; transition: border-color var(--dur-2); }
+  .model b { display: block; font-size: 14px; line-height: 20px; color: var(--fg-strong); }
+  .model[aria-pressed="true"] { border-color: var(--violet); box-shadow: inset 3px 0 0 var(--violet); }
+  .state { display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 20px; margin-bottom: 4px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--disabled); flex: none; }
+  .dot.ok { background: var(--success); }
+  .dot.warn { background: var(--warning); }
+  .dot.bad { background: var(--danger); }
+  .kv { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 13px; line-height: 20px; margin: 0; }
+  .kv dt { color: var(--fg-muted); }
+  .kv dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--fg-strong); font-weight: 600; text-align: right; }
+  .sidebar footer { margin-top: auto; }
+
+  /* ---------- Основная область ---------- */
+  main { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+  .tabs { display: flex; gap: 4px; padding: 14px 28px 0; border-bottom: var(--hairline); background: var(--bg); }
+  .tab { border: 0; background: none; padding: 10px 14px; font-weight: 600; font-size: 14px; color: var(--fg-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tab[aria-selected="true"] { color: var(--fg-strong); border-bottom-color: var(--violet); }
+  .panel { flex: 1; overflow: auto; padding: 24px 28px 40px; }
+  .panel[hidden] { display: none; }
+  .wrap { max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+
+  .hero { display: flex; align-items: center; gap: 20px; }
+  .hero .orb { width: 96px; height: 96px; }
+  .hero h1 { font: 650 24px/32px var(--font-sans); letter-spacing: -.02em; }
+  .hero p { color: var(--fg-muted); font-size: 14px; line-height: 20px; }
+  .ask { display: flex; gap: 10px; align-items: flex-end; }
+  .ask textarea { flex: 1; resize: vertical; min-height: 56px; max-height: 200px; font: 400 15px/22px var(--font-sans); padding: 12px 14px; border: var(--hairline-strong); border-radius: var(--r-sm); background: var(--surface); color: var(--fg); }
+  .primary { border: 0; background: var(--sage-800); color: var(--fg-on-brand); border-radius: var(--r-sm); padding: 12px 18px; font-weight: 600; font-size: 14px; }
+  .quiet { border: var(--hairline); background: var(--surface); color: var(--fg-strong); border-radius: var(--r-sm); padding: 10px 14px; font-weight: 600; font-size: 13px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { border: var(--hairline); background: var(--surface); border-radius: var(--r-full); padding: 6px 12px; font-size: 13px; line-height: 18px; color: var(--fg-muted); text-align: left; }
+  .chip:hover:not(:disabled) { background: var(--surface-mist); color: var(--fg-strong); }
+  .chip.neg { border-style: dashed; }
+  .progress-line { min-height: 20px; font-size: 13px; color: var(--fg-muted); }
+  .notice { background: var(--danger-bg); color: var(--danger); border-radius: var(--r-sm); padding: 10px 14px; font-size: 14px; }
+  .notice[hidden] { display: none; }
+
+  .card { background: var(--surface); border: var(--hairline); border-radius: var(--r-md); padding: 18px 20px; }
+  .card h3 { font: 600 15px/22px var(--font-sans); margin: 0 0 10px; color: var(--fg-strong); }
+  .card section + section { border-top: var(--hairline); margin-top: 14px; padding-top: 14px; }
+  .answer-text { font-size: 16px; line-height: 26px; white-space: pre-line; }
+  .badge { display: inline-block; font: 600 11px/16px var(--font-sans); letter-spacing: .04em; text-transform: uppercase; padding: 3px 8px; border-radius: var(--r-xs); background: var(--brand-tint); color: var(--sage-900); margin-bottom: 10px; }
+  .badge.calm { background: var(--info-bg); color: var(--blue); }
+  .badge.fail { background: var(--warning-bg); color: var(--warning); }
+  .sources { margin: 0; padding-left: 18px; font-size: 13px; line-height: 20px; color: var(--fg-muted); }
+  .sources code { font-size: 12px; color: var(--fg-subtle); }
+  blockquote { margin: 0 0 10px; padding: 8px 12px; border-left: 3px solid var(--violet); background: var(--surface-mist); border-radius: 0 var(--r-xs) var(--r-xs) 0; font-size: 14px; line-height: 21px; }
+  blockquote cite { display: block; font-style: normal; font-size: 12px; color: var(--fg-subtle); margin-top: 4px; }
+  .verdict { display: flex; gap: 10px; align-items: baseline; font-size: 14px; line-height: 20px; }
+  .pill { flex: none; font-weight: 600; font-size: 12px; padding: 2px 10px; border-radius: var(--r-full); background: var(--soft-stone); color: var(--fg-muted); }
+  .pill.supported { background: var(--success-bg); color: var(--success); }
+  .pill.unsupported { background: var(--danger-bg); color: var(--danger); }
+  .metrics { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+  .metrics b { color: var(--fg-strong); }
+
+  /* ---------- Сравнение ---------- */
+  .section-title { font: 650 16px/24px var(--font-sans); margin: 8px 0 8px; color: var(--fg-strong); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 18px; background: var(--surface); border: var(--hairline); border-radius: var(--r-md); overflow: hidden; }
+  th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: var(--hairline); }
+  th { font-weight: 600; color: var(--fg-subtle); font-size: 12px; background: var(--surface-alt); }
+  td { font-variant-numeric: tabular-nums; }
+  tr.group td { font-weight: 600; color: var(--fg-subtle); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; background: var(--surface-mist); }
+  tr:last-child td { border-bottom: 0; }
+  td .q { color: var(--fg-strong); }
+  .run { display: inline-block; font-size: 11px; line-height: 16px; padding: 1px 6px; border-radius: var(--r-xs); background: var(--soft-stone); color: var(--fg-muted); white-space: nowrap; margin-bottom: 2px; }
+  .run.answer { background: var(--success-bg); color: var(--success); }
+  .run.failed, .run.error { background: var(--warning-bg); color: var(--warning); }
+  .steps { margin: 0; padding-left: 20px; font-size: 14px; line-height: 20px; }
+  .steps li + li { margin-top: 6px; }
+  blockquote.bad { border-left-color: var(--warning); }
+  code { font-size: 12px; }
+  .empty { color: var(--fg-muted); font-size: 14px; }
+
+  /* ---------- Шарик (эталон — w4d5/static/index.html и docs/orb-prototype.html) ---------- */
+  .orb { display: inline-block; flex: none; position: relative; border-radius: 50%; }
+  .orb svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .orb .body { transform-box: fill-box; transform-origin: 50% 60%; transition: transform .4s var(--ease-standard); }
+  .orb .glow { opacity: 0; transition: opacity .4s var(--ease-standard); }
+  .orb .eyes { transform-box: view-box; transition: transform .35s var(--ease-standard); }
+  .orb .eye { transform-box: fill-box; transform-origin: 50% 50%; transition: transform .12s ease-in; }
+  .orb .body-fill { transition: fill .4s var(--ease-standard), opacity .4s var(--ease-standard); }
+  .orb.blink .eye { transform: scaleY(.08); }
+  .orb[data-state="think"] .body { animation: orb-breathe 2.4s var(--ease-standard) infinite; }
+  .orb[data-state="think"] .glow { opacity: 1; animation: orb-glow 2.4s var(--ease-standard) infinite; }
+  .orb[data-state="think"] .eyes { animation: orb-wander 3.2s var(--ease-standard) infinite; }
+  .orb[data-state="tool"] .eyes { transform: translate(-3px, 9px); animation: orb-read 1.6s linear infinite; }
+  .orb[data-state="tool"] .glow { opacity: .6; }
+  .orb.hop .body { animation: orb-hop .45s var(--ease-standard); }
+  .orb[data-state="check"] .eyes { transform: translate(-4px, 3px); }
+  .orb[data-state="check"] .eye { transform: scaleY(.42); }
+  .orb[data-state="retry"] .body-fill { fill: url(#orb-warm); }
+  .orb[data-state="retry"] .eyes { animation: orb-glance 1.4s var(--ease-standard) infinite; }
+  .orb[data-state="done"] .body { transform: scale(.94); }
+  /* «Не знаю»: спокойно опущенный взгляд, без анимации — отказ не ошибка. */
+  .orb[data-state="calm"] .body { transform: scale(.96); }
+  .orb[data-state="calm"] .body-fill { opacity: .82; }
+  .orb[data-state="calm"] .eyes { transform: translate(-6px, 7px); }
+  .orb[data-state="calm"] .eye { transform: scaleY(.55); }
+  @keyframes orb-breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.045, 1.03); } }
+  @keyframes orb-glow { 0%,100% { opacity: .35; } 50% { opacity: .9; } }
+  @keyframes orb-wander { 0%,100% { transform: translate(0,0); } 25% { transform: translate(5px,-5px); } 50% { transform: translate(-7px,-4px); } 75% { transform: translate(2px,-7px); } }
+  @keyframes orb-read { 0% { transform: translate(-7px, 9px); } 45% { transform: translate(3px, 9px); } 50% { transform: translate(-7px, 10px); } 100% { transform: translate(-7px, 9px); } }
+  @keyframes orb-hop { 0% { transform: translateY(0) scale(1); } 30% { transform: translateY(-8%) scale(.97,1.04); } 60% { transform: translateY(0) scale(1.05,.95); } 100% { transform: translateY(0) scale(1); } }
+  @keyframes orb-glance { 0%,60%,100% { transform: translate(0,0); } 70%,90% { transform: translate(-12px,1px); } }
+  @media (prefers-reduced-motion: reduce) { .orb *, .orb.hop .body { animation: none !important; } }
+</style>
+</head>
+<body>
+<!-- Градиенты шарика: один скрытый <svg><defs> на всё приложение. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <radialGradient id="orb-grad" cx="35%" cy="28%" r="80%">
+      <stop offset="0" stop-color="#B9AEFF"/><stop offset=".55" style="stop-color:var(--violet)"/><stop offset="1" stop-color="#6A58E8"/>
+    </radialGradient>
+    <radialGradient id="orb-warm" cx="35%" cy="28%" r="80%">
+      <stop offset="0" stop-color="#FFD9A8"/><stop offset=".55" stop-color="#E7A15A"/><stop offset="1" stop-color="#B7791F"/>
+    </radialGradient>
+    <radialGradient id="orb-glow" cx="50%" cy="50%" r="50%">
+      <stop offset=".55" style="stop-color:var(--violet)" stop-opacity=".45"/><stop offset="1" style="stop-color:var(--violet)" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+</svg>
+
+<aside class="sidebar">
+  <div class="brand"><span class="orb" data-state="idle"></span><div><b>Книжный исследователь</b><span>Qwen3.5-9B · 4 бит · на этом Mac</span></div></div>
+  <div>
+    <p class="caption">Профиль модели</p>
+    <div id="profiles"></div>
+  </div>
+  <div>
+    <p class="caption">Состояние</p>
+    <div class="state"><i class="dot" id="dot-server"></i><span id="st-server">Проверяю сервер модели…</span></div>
+  </div>
+  <div>
+    <p class="caption">Последний ответ</p>
+    <dl class="kv" id="last"><dt>пока нет</dt><dd></dd></dl>
+  </div>
+  <footer class="subtle">Книги — books-rag, раздел «Агенты и LLM» (FTS5, только чтение) · модель — mlx_lm.server · в сеть ничего не ходит</footer>
+</aside>
+
+<main>
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="ask" aria-selected="true">Вопрос</button>
+    <button class="tab" role="tab" data-tab="bench" aria-selected="false">Сравнение</button>
+  </nav>
+
+  <section class="panel" id="tab-ask">
+    <div class="wrap">
+      <div class="hero">
+        <span class="orb" data-state="idle"></span>
+        <div><h1>Спроси о книгах про агентов и LLM</h1><p>Агент сам ищет по книгам, читает фрагменты и отвечает с цитатами. Дословность цитат проверяет код.</p></div>
+      </div>
+      <form class="ask" id="ask-form">
+        <textarea id="question" rows="2" placeholder="Например: чем ReAct-агент отличается от одношагового?" aria-label="Вопрос"></textarea>
+        <button class="primary" id="send" type="submit">Спросить</button>
+        <button class="quiet" id="stop" type="button" hidden>Остановить</button>
+      </form>
+      <div class="chips" id="chips"></div>
+      <div class="progress-line" id="ask-progress"></div>
+      <div class="notice" id="ask-error" hidden></div>
+      <article class="card" id="trace" hidden><h3>Шаги агента</h3><ol class="steps" id="steps"></ol></article>
+      <article class="card" id="answer" hidden></article>
+    </div>
+  </section>
+
+  <section class="panel" id="tab-bench" hidden>
+    <div class="wrap">
+      <p class="muted">Готовый бенч: 14 эталонных вопросов, по одному прогону на профиль. Запуск — <code>sh scripts/bench.sh</code> из папки дня
+        (сам поднимает сервер baseline, потом сервер с KV 8 бит). Окно показывает последние отчёты из <code>data/</code>.</p>
+      <div class="subtle" id="bench-files"></div>
+      <div id="bench-settings"></div>
+      <div id="bench-summary"></div>
+      <div id="bench-table"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const PROFILES = [
+  { key: 'baseline', name: 'До оптимизации', info: 'сэмплинг из карточки модели · до 1200 токенов · 5 фрагментов целиком · общий промпт · KV 16 бит' },
+  { key: 'optimized', name: 'После оптимизации', info: 'temperature 0 · до 400 токенов · 3 окна по 180 слов · промпт под кейс · KV 8 бит' },
+];
+const EXAMPLES = [
+  'Чем ReAct-агент отличается от одношагового агента?',
+  'How do I add human approval before an agent performs a risky action?',
+  'Зачем сжимать контекст заранее, до того как окно заполнится?',
+];
+const TRAP = 'Как настроить автомасштабирование агентов в Kubernetes через Helm и Terraform?';
+const ORB_SVG = '<svg viewBox="0 0 100 100" aria-hidden="true"><circle class="glow" cx="50" cy="52" r="62" fill="url(#orb-glow)"/>'
+  + '<g class="body"><circle class="body-fill" cx="50" cy="50" r="46" fill="url(#orb-grad)"/>'
+  + '<ellipse cx="36" cy="27" rx="13" ry="7" fill="#fff" opacity=".28" transform="rotate(-28 36 27)"/><g class="eyes">'
+  + '<g transform="rotate(-18 58 35)"><rect class="eye" x="54" y="25" width="8.5" height="21" rx="4.25" style="fill:var(--sage-900)"/></g>'
+  + '<g transform="rotate(-18 73 33)"><rect class="eye" x="69" y="23" width="8.5" height="21" rx="4.25" style="fill:var(--sage-900)"/></g>'
+  + '</g></g></svg>';
+
+const $ = id => document.getElementById(id);
+let profile = 'optimized';
+let busyAsk = false;
+let starting = true;
+
+function el(tag, cls = '', text = '') { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== '') n.textContent = text; return n; }
+const fmtMs = v => v == null ? '—' : v >= 1000 ? (v / 1000).toFixed(1).replace('.', ',') + ' с' : Math.round(v) + ' мс';
+const fmtNum = (v, d = 1) => v == null ? '—' : v.toFixed(d).replace('.', ',');
+const fmtInt = v => v == null ? '—' : Math.round(v).toLocaleString('ru-RU');
+const fmtMb = v => v == null ? '—' : (v / 1024).toFixed(1).replace('.', ',') + ' ГБ';
+const ratio = r => !r ? '—' : r.of ? `${r.n}/${r.of}` : '—';
+const profileName = key => PROFILES.find(p => p.key === key)?.name ?? key;
+
+/* ---------- Шарик ---------- */
+document.querySelectorAll('.orb').forEach(o => { o.innerHTML = ORB_SVG; });
+function setOrb(state) {
+  document.querySelectorAll('.orb').forEach(o => {
+    if (state === 'hop') { o.classList.remove('hop'); void o.offsetWidth; o.classList.add('hop'); return; }
+    o.dataset.state = state;
+  });
+}
+// Моргание: случайно 2.6–5.8 с, иногда двойное, только в спокойных состояниях.
+(function blink() {
+  setTimeout(() => {
+    document.querySelectorAll('.orb').forEach(o => {
+      if (!['idle', 'think', 'done'].includes(o.dataset.state)) return;
+      o.classList.add('blink'); setTimeout(() => o.classList.remove('blink'), 130);
+      if (Math.random() < 0.25) setTimeout(() => { o.classList.add('blink'); setTimeout(() => o.classList.remove('blink'), 120); }, 260);
+    });
+    blink();
+  }, 2600 + Math.random() * 3200);
+})();
+
+/* ---------- Сайдбар ---------- */
+function renderProfiles() {
+  const box = $('profiles'); box.replaceChildren();
+  for (const p of PROFILES) {
+    const b = el('button', 'model'); b.type = 'button'; b.setAttribute('aria-pressed', String(p.key === profile)); b.disabled = busyAsk || starting;
+    b.append(el('b', '', p.name), el('span', '', p.info));
+    b.onclick = () => switchProfile(p.key);
+    box.append(b);
+  }
+}
+async function switchProfile(key) {
+  if (key === profile || busyAsk || starting) return;
+  profile = key; starting = true; renderProfiles(); lock();
+  setDot('warn', `Перезапускаю сервер модели: ${profileName(key)}…`);
+  const error = await window.lab.profile(key);
+  if (error) showError('ask', error);
+  refreshStatus();
+}
+function setDot(cls, text) { $('dot-server').className = 'dot ' + cls; $('st-server').textContent = text; }
+async function refreshStatus() {
+  try {
+    const s = await window.lab.status();
+    starting = s.starting;
+    if (s.profile) profile = s.profile;
+    if (!s.binary) setDot('bad', 'Нет бинарника w6d4 — собери cargo build --release');
+    else if (s.starting) setDot('warn', `Сервер модели запускается: ${profileName(profile)}…`);
+    else if (s.foreign) setDot('bad', 'На 8080 чужой сервер — профиль не управляется');
+    else if (s.server) setDot('ok', `Сервер на связи · ${profileName(s.profile)}`);
+    else setDot('warn', 'Сервер модели не отвечает');
+    renderProfiles(); lock();
+  } catch (e) { setDot('bad', 'Нет связи с приложением: ' + e.message); }
+}
+function renderLast(s, peak) {
+  const dl = $('last'); dl.replaceChildren();
+  const rows = [['профиль', profileName(profile)], ['поисков', String(s.searches)], ['первый токен ответа', fmtMs(s.ttft_ms)],
+    ['скорость', s.tok_s == null ? '—' : fmtNum(s.tok_s) + ' ток/с'], ['весь вопрос', fmtMs(s.total_ms)], ['prompt-токенов', fmtInt(s.prompt_tokens)], ['пик памяти сервера', fmtMb(peak)]];
+  for (const [k, v] of rows) dl.append(el('dt', '', k), el('dd', '', v));
+}
+
+/* ---------- Вкладки ---------- */
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.setAttribute('aria-selected', String(x === t)));
+  $('tab-ask').hidden = t.dataset.tab !== 'ask';
+  $('tab-bench').hidden = t.dataset.tab !== 'bench';
+  if (t.dataset.tab === 'bench') loadLatest();
+});
+
+function lock() {
+  const off = busyAsk || starting;
+  $('send').disabled = off; $('stop').hidden = !busyAsk;
+  document.querySelectorAll('.chip').forEach(c => { c.disabled = off; });
+}
+
+/* ---------- Вопрос ---------- */
+for (const q of [...EXAMPLES, TRAP]) {
+  const c = el('button', 'chip' + (q === TRAP ? ' neg' : ''), q); c.type = 'button';
+  c.onclick = () => { $('question').value = q; ask(); };
+  $('chips').append(c);
+}
+async function ask() {
+  const q = $('question').value.trim();
+  if (!q || busyAsk || starting) return;
+  $('ask-error').hidden = true; $('answer').hidden = true; $('trace').hidden = true; $('steps').replaceChildren();
+  $('ask-progress').textContent = 'Агент думает, что искать…';
+  setOrb('think'); busyAsk = true; renderProfiles(); lock();
+  const error = await window.lab.ask(q);
+  if (error) { busyAsk = false; renderProfiles(); lock(); setOrb('idle'); showError('ask', error); }
+}
+$('ask-form').addEventListener('submit', e => { e.preventDefault(); ask(); });
+$('stop').onclick = () => window.lab.stop();
+$('question').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); ask(); } });
+
+function showError(where, text) { $(where + '-error').textContent = text; $(where + '-error').hidden = false; $(where + '-progress').textContent = ''; }
+
+function step(call, titles) {
+  const li = el('li');
+  const what = call.name === 'search_books' ? `поиск «${call.args?.query ?? ''}»` : call.name === 'read_chunk' ? `читаю фрагмент ${call.args?.id ?? ''}` : call.name;
+  li.append(el('b', '', what));
+  li.append(el('div', 'subtle', call.note ?? (titles.length ? titles.join(' · ') : 'ничего не найдено')));
+  return li;
+}
+
+window.lab.onEvent(e => {
+  if (e.event === 'idle') { busyAsk = false; renderProfiles(); lock(); return; }
+  if (e.event === 'server') { starting = e.starting; refreshStatus(); return; }
+  if (e.event === 'generate') { setOrb('think'); $('ask-progress').textContent = `Модель пишет · запрос ${e.round}…`; }
+  else if (e.event === 'tool') { setOrb('tool'); $('trace').hidden = false; $('steps').append(step(e.call, e.titles)); $('ask-progress').textContent = 'Читаю найденное…'; }
+  else if (e.event === 'done') { renderAnswer(e); renderLast(e.sample, e.peak_mb); $('ask-progress').textContent = ''; setOrb(e.sample.known === false ? 'calm' : e.sample.format_ok ? 'done' : 'retry'); }
+  else if (e.event === 'error') { setOrb('idle'); showError('ask', e.message); }
+  else if (e.event === 'stopped') { setOrb('idle'); $('ask-progress').textContent = 'Остановлено.'; }
+});
+
+function renderAnswer(e) {
+  const s = e.sample, card = $('answer'); card.replaceChildren(); card.hidden = false;
+  const [label, cls] = !s.format_ok ? ['ответ не в формате JSON — цитаты не проверить', 'fail'] : s.known === false ? ['нет данных в книгах', 'calm'] : ['ответ с цитатами', ''];
+  const main = el('section'); main.append(el('span', 'badge ' + cls, label), el('div', 'answer-text', s.answer || '—'));
+  card.append(main);
+  if (s.cited.length) {
+    const sec = el('section'); sec.append(el('h3', '', `Цитаты — дословно ${s.quotes_ok} из ${s.quotes}`));
+    for (const c of s.cited) {
+      const b = el('blockquote', c.verbatim ? '' : 'bad', '«' + c.text + '»');
+      b.append(el('cite', '', `[${c.id}] ${c.title || 'id не из выдачи'}${c.pages ? ' · ' + c.pages : ''} — ${c.verbatim ? 'дословно ✓' : c.seen ? 'не дословно ✗' : 'фрагмент агенту не выдавался ✗'}`));
+      sec.append(b);
+    }
+    card.append(sec);
+  }
+  if (e.expected) {
+    const sec = el('section'); sec.append(el('h3', '', `Эталон ${e.expected.id}`));
+    const ok = s.book_ok;
+    const v = el('div', 'verdict');
+    v.append(el('span', 'pill ' + (ok ? 'supported' : 'unsupported'), ok ? 'совпало' : 'мимо'), el('span', 'muted', e.expected.where));
+    sec.append(v); card.append(sec);
+  }
+  const sec = el('section'), row = el('div', 'metrics');
+  const add = (k, v) => { const span = el('span', '', k + ' '); span.append(el('b', '', v)); row.append(span); };
+  add('поисков', String(s.searches)); add('запросов к модели', String(s.rounds));
+  add('первый токен ответа', fmtMs(s.ttft_ms)); add('скорость', s.tok_s == null ? '—' : fmtNum(s.tok_s) + ' ток/с');
+  add('весь вопрос', fmtMs(s.total_ms)); add('prompt-токенов', fmtInt(s.prompt_tokens)); add('пик памяти сервера', fmtMb(e.peak_mb));
+  sec.append(row); card.append(sec);
+}
+
+/* ---------- Сравнение ---------- */
+async function loadLatest() {
+  const latest = await window.lab.latest();
+  const b = latest.baseline?.report, o = latest.optimized?.report;
+  $('bench-files').textContent = ['baseline', 'optimized'].map(k => latest[k] ? `${latest[k].file}${latest[k].report.complete === false ? ' (не завершён)' : ''}` : `${k}: отчёта нет`).join(' · ');
+  if (!b && !o) { $('bench-summary').replaceChildren(el('p', 'empty', 'Отчётов пока нет. Запусти sh scripts/bench.sh — 14 вопросов на каждый профиль.')); $('bench-settings').replaceChildren(); $('bench-table').replaceChildren(); return; }
+  renderSettings(b, o); renderSummary(b, o); renderQuestions(b, o);
+}
+
+function table(headers, rows) {
+  const t = el('table'), head = el('tr');
+  head.append(...headers.map(h => el('th', '', h)));
+  t.append(head);
+  for (const r of rows) {
+    const tr = el('tr', r.group ? 'group' : '');
+    for (const c of r.cells) tr.append(typeof c === 'string' ? el('td', '', c) : (() => { const td = el('td'); td.append(c); return td; })());
+    t.append(tr);
+  }
+  return t;
+}
+
+function renderSettings(b, o) {
+  const sb = b?.settings, so = o?.settings;
+  const samp = s => !s ? '—' : Object.entries(s.sampling).map(([k, v]) => `${k} ${v}`).join(', ');
+  const rows = [
+    ['Сэмплинг', samp(sb), samp(so)],
+    ['max_tokens', String(sb?.max_tokens ?? '—'), String(so?.max_tokens ?? '—')],
+    ['Фрагментов на поиск', String(sb?.hits ?? '—'), String(so?.hits ?? '—')],
+    ['Текст фрагмента', sb ? (sb.window_words ? `окно ${sb.window_words} слов` : 'целиком (~460 слов)') : '—', so ? (so.window_words ? `окно ${so.window_words} слов` : 'целиком (~460 слов)') : '—'],
+    ['Системный промпт', sb ? `общий, ${sb.system_chars} симв.` : '—', so ? `под кейс, ${so.system_chars} симв.` : '—'],
+    ['KV-кэш', sb ? (sb.kv_bits ? `${sb.kv_bits} бит` : '16 бит (без квантования)') : '—', so ? (so.kv_bits ? `${so.kv_bits} бит с 0-го токена` : '16 бит') : '—'],
+    ['Веса', 'Qwen3.5-9B 4 бит', 'Qwen3.5-9B 4 бит'],
+  ];
+  $('bench-settings').replaceChildren(el('h3', 'section-title', 'Что поменяли'), table(['Параметр', 'До', 'После'], rows.map(cells => ({ cells }))));
+}
+
+function renderSummary(b, o) {
+  const sb = b?.summary, so = o?.summary;
+  const pick = (s, f) => s ? f(s) : '—';
+  const rows = [
+    { group: true, cells: ['Качество', '', ''] },
+    { cells: ['Ожидаемая книга процитирована', pick(sb, s => ratio(s.book_ok)), pick(so, s => ratio(s.book_ok))] },
+    { cells: ['«Нет данных» на ловушке E14', pick(sb, s => ratio(s.trap_ok)), pick(so, s => ratio(s.trap_ok))] },
+    { cells: ['Цитаты дословно в фрагменте', pick(sb, s => ratio(s.quotes_ok)), pick(so, s => ratio(s.quotes_ok))] },
+    { cells: ['Ответ в формате JSON', pick(sb, s => ratio(s.format_ok)), pick(so, s => ratio(s.format_ok))] },
+    { cells: ['Поисков на вопрос, в среднем', pick(sb, s => fmtNum(s.searches_avg)), pick(so, s => fmtNum(s.searches_avg))] },
+    { group: true, cells: ['Скорость (медиана)', '', ''] },
+    { cells: ['Первый токен финального ответа', pick(sb, s => fmtMs(s.ttft_ms_p50)), pick(so, s => fmtMs(s.ttft_ms_p50))] },
+    { cells: ['Генерация ответа, ток/с', pick(sb, s => fmtNum(s.tok_s_p50)), pick(so, s => fmtNum(s.tok_s_p50))] },
+    { cells: ['Время на вопрос', pick(sb, s => fmtMs(s.total_ms_p50)), pick(so, s => fmtMs(s.total_ms_p50))] },
+    { cells: ['Весь прогон', pick(sb, s => fmtMs(s.total_s * 1000)), pick(so, s => fmtMs(s.total_s * 1000))] },
+    { group: true, cells: ['Ресурсы', '', ''] },
+    { cells: ['Prompt-токенов на вопрос (медиана)', pick(sb, s => fmtInt(s.prompt_tokens_p50)), pick(so, s => fmtInt(s.prompt_tokens_p50))] },
+    { cells: ['Prompt-токенов за прогон', pick(sb, s => fmtInt(s.prompt_tokens_sum)), pick(so, s => fmtInt(s.prompt_tokens_sum))] },
+    { cells: ['Пик памяти mlx_lm.server', b ? fmtMb(b.peak_mb) : '—', o ? fmtMb(o.peak_mb) : '—'] },
+    { cells: ['Ошибки сервера', pick(sb, s => String(s.errors)), pick(so, s => String(s.errors))] },
+  ];
+  $('bench-summary').replaceChildren(el('h3', 'section-title', 'До и после'), table(['Метрика', 'До', 'После'], rows));
+}
+
+function cell(s) {
+  const box = el('div');
+  if (!s) { box.append(el('span', 'subtle', '—')); return box; }
+  if (s.error) { box.append(el('span', 'run error', 'ошибка')); box.title = s.error; return box; }
+  const ok = s.book_ok;
+  box.append(el('span', 'run ' + (ok ? 'answer' : 'failed'), s.trap ? (ok ? 'нет данных ✓' : 'ответил ✗') : (ok ? 'книга ✓' : 'книга ✗')));
+  box.append(el('div', 'subtle', `цитаты ${s.quotes_ok}/${s.quotes} · поисков ${s.searches} · ${fmtMs(s.total_ms)} · ${fmtInt(s.prompt_tokens)} ток.`));
+  box.title = s.answer;
+  return box;
+}
+
+function renderQuestions(b, o) {
+  const ids = [...new Set([...(b?.samples ?? []), ...(o?.samples ?? [])].map(s => s.id))];
+  const rows = ids.map(id => {
+    const sb = b?.samples.find(s => s.id === id), so = o?.samples.find(s => s.id === id);
+    const q = el('div'); q.append(el('div', 'q', `${id}. ${(sb ?? so).question}`));
+    return { cells: [q, cell(sb), cell(so)] };
+  });
+  $('bench-table').replaceChildren(el('h3', 'section-title', 'По вопросам'), table(['Вопрос', 'До', 'После'], rows));
+}
+
+renderProfiles();
+lock();
+refreshStatus();
+setInterval(refreshStatus, 5000);
+</script>
+</body>
+</html>

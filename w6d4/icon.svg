@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Иконка RAG Lab: шарик из w4d5 на кремовой плашке macOS (сетка 824 из 1024). -->
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFDF8"/>
+      <stop offset="1" stop-color="#EFEAE1"/>
+    </linearGradient>
+    <radialGradient id="orb" cx="35%" cy="28%" r="80%">
+      <stop offset="0" stop-color="#B9AEFF"/>
+      <stop offset=".55" stop-color="#8B7CF6"/>
+      <stop offset="1" stop-color="#6A58E8"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset=".55" stop-color="#8B7CF6" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#8B7CF6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#paper)" stroke="#DED8CD" stroke-width="4"/>
+  <g transform="translate(212 212) scale(6)">
+    <circle cx="50" cy="52" r="62" fill="url(#glow)"/>
+    <circle cx="50" cy="50" r="46" fill="url(#orb)"/>
+    <ellipse cx="36" cy="27" rx="13" ry="7" fill="#fff" opacity=".28" transform="rotate(-28 36 27)"/>
+    <g transform="rotate(-18 58 35)"><rect x="54" y="25" width="8.5" height="21" rx="4.25" fill="#1E2E22"/></g>
+    <g transform="rotate(-18 73 33)"><rect x="69" y="23" width="8.5" height="21" rx="4.25" fill="#1E2E22"/></g>
+  </g>
+</svg>
