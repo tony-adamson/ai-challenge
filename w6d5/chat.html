@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Local LLM — приватный чат</title>
+<style>
+:root{color-scheme:light;--ink:#202c29;--muted:#7b8781;--line:#e7ebe5;--green:#287b57;--pale:#edf4ed;--paper:#fbfcf8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:15px}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;display:flex;flex-direction:column;height:100dvh;background:var(--paper);color:var(--ink)}
+button,textarea{font:inherit}
+button{cursor:pointer;border:0;border-radius:8px;padding:10px 13px;font-weight:600}
+button:disabled{cursor:not-allowed;opacity:.45}
+button:focus-visible{outline:2px solid var(--green);outline-offset:3px}
+.primary{background:var(--green);color:#fff}
+.quiet{background:transparent;color:var(--muted);font-size:12px;padding:7px 9px}
+.quiet:hover{background:var(--pale)}
+header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);background:#1f2d27;color:#e5eee7}
+.brand-mark{font-family:Georgia,serif;font-size:24px;background:#c6dfb6;color:#233629;width:34px;height:34px;line-height:34px;text-align:center;border-radius:10px;flex:none}
+.brand{flex:1;min-width:0;font-weight:650}
+.brand small{display:block;color:#93a699;font-size:11px;font-weight:400;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+header .quiet{color:#b9c8bd}
+header .quiet:hover{background:#2d4237}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#c76b52;margin-right:6px}
+.dot.on{background:#9fc888}
+#messages{flex:1;overflow-y:auto;padding:20px 16px}
+.welcome{max-width:540px;margin:16px auto;color:var(--muted);line-height:1.6}
+.welcome h2{font-size:24px;color:var(--ink);font-weight:500;margin:6px 0}
+.examples{display:grid;gap:8px;margin-top:18px}
+.examples button{background:#fff;border:1px solid var(--line);color:var(--ink);font-weight:400;text-align:left;line-height:1.5}
+.message{margin:0 auto 22px;max-width:780px}
+.message-label{font-size:10px;letter-spacing:1.2px;font-weight:600;color:#738071;margin-bottom:8px}
+.message-content{overflow-wrap:anywhere;line-height:1.7}
+.message-content p{margin:0 0 10px}
+.message-content ul,.message-content ol{margin:0 0 10px;padding-left:22px}
+.message-content h3{font-size:15px;margin:14px 0 8px}
+.message-content code{font-family:ui-monospace,SFMono-Regular,monospace;font-size:12px;background:#eef2ea;padding:1px 5px;border-radius:4px}
+.message-content pre{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto}
+.message-content pre code{background:none;padding:0}
+.message.user .message-content{background:#edf1e9;border-radius:12px;padding:12px 16px;white-space:pre-wrap}
+.message.pending .message-content::after{content:"▍";color:var(--green);animation:blink 1s steps(2) infinite}
+@keyframes blink{to{opacity:0}}
+.meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.meta span{font-size:10px;color:#61785f;background:var(--pale);border-radius:5px;padding:4px 7px}
+.error{font-size:13px;color:#a45f43;margin-top:8px;line-height:1.5}
+footer{padding:8px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--line)}
+#progress{min-height:20px;font-size:12px;color:var(--green);max-width:860px;margin:0 auto 6px}
+#ask-form{background:#fff;border:1px solid #d8e1d3;border-radius:12px;padding:10px 12px;display:flex;align-items:flex-end;gap:8px;max-width:860px;margin:0 auto}
+#question{flex:1;border:0;resize:none;padding:0;outline:0;line-height:1.5;min-width:0;background:transparent;color:var(--ink);font-size:16px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+</style>
+</head>
+<body>
+<header>
+  <span class="brand-mark">l</span>
+  <div class="brand">Local LLM<small><span id="dot" class="dot"></span><span id="server-state">Проверяем сервер…</span></small></div>
+  <button id="new-chat" class="quiet" type="button">Новый</button>
+  <button id="change-token" class="quiet" type="button">Токен</button>
+</header>
+<section id="messages" aria-label="История разговора"></section>
+<footer>
+  <div id="progress" role="status" aria-live="polite"></div>
+  <form id="ask-form"><label class="sr-only" for="question">Сообщение</label><textarea id="question" rows="2" placeholder="Спроси что-нибудь…"></textarea><button id="send" class="primary" type="submit">↑</button></form>
+</footer>
+<script>
+// Страница открыта как /llm/ (Caddy срезает префикс) или как / на самом шлюзе: пути API строим от текущего каталога.
+const BASE = location.pathname.replace(/\/?$/, '/');
+const TOKEN_KEY = 'llm-token';
+const EXAMPLES = [
+  'Какая столица Австралии? Ответь одним словом.',
+  'Объясни в 3–4 предложениях, чем процесс отличается от потока в ОС.',
+];
+const $ = id => document.getElementById(id);
+const question = $('question');
+let history = [];   // {role, content, meta?, error?, pending?, unanswered?}
+let busy = false;
+
+// localStorage может быть недоступен (приватный режим) — тогда токен живёт до перезагрузки.
+let memoryToken = '';
+function getToken() { try { return localStorage.getItem(TOKEN_KEY) || memoryToken; } catch { return memoryToken; } }
+function setToken(t) { memoryToken = t; try { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); } catch {} }
+function askToken() {
+  const t = (prompt('Токен доступа к модели (выдаёт владелец сервиса):', getToken()) || '').trim();
+  if (t) setToken(t);
+  return t;
+}
+
+function el(tag, cls = '', text = '') { const n = document.createElement(tag); n.className = cls; n.textContent = text; return n; }
+const escape = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+function inline(s) {
+  return s.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<i>$2</i>');
+}
+function markdown(text) {
+  const out = []; let list = null;
+  const close = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  escape(text).split(/```\w*\n?/).forEach((part, i) => {
+    if (i % 2) { close(); out.push(`<pre><code>${part}</code></pre>`); return; }
+    for (const line of part.split('\n')) {
+      const ul = line.match(/^\s*[*-]\s+(.*)/), ol = line.match(/^\s*(\d+)[.)]\s+(.*)/), h = line.match(/^#{1,4}\s+(.*)/);
+      if (ul || ol) { const kind = ul ? 'ul' : 'ol'; if (list !== kind) { close(); out.push(ol ? `<ol start="${ol[1]}">` : '<ul>'); list = kind; } out.push(`<li>${inline(ul ? ul[1] : ol[2])}</li>`); }
+      else if (h) { close(); out.push(`<h3>${inline(h[1])}</h3>`); }
+      else if (line.trim()) { close(); out.push(`<p>${inline(line)}</p>`); }
+      else close();
+    }
+  });
+  close(); return out.join('');
+}
+
+function render() {
+  const box = $('messages');
+  box.replaceChildren();
+  if (!history.length) {
+    const w = el('div', 'welcome');
+    w.append(el('h2', '', 'О чём спросим модель?'), el('p', '', 'Qwen3.5-9B работает на домашнем Mac автора: без облачных API. Ответ приходит целиком, одна генерация за раз — при занятости запрос ждёт в очереди.'));
+    const ex = el('div', 'examples');
+    for (const text of EXAMPLES) { const b = el('button', '', text); b.type = 'button'; b.onclick = () => ask(text); ex.append(b); }
+    w.append(ex); box.append(w); return;
+  }
+  for (const m of history) {
+    const item = el('article', 'message ' + m.role + (m.pending ? ' pending' : ''));
+    item.append(el('div', 'message-label', m.role === 'user' ? 'ТЫ' : 'QWEN · ЛОКАЛЬНО'));
+    const content = el('div', 'message-content');
+    if (m.role === 'user') content.textContent = m.content; else content.innerHTML = markdown(m.content);
+    item.append(content);
+    if (m.meta) { const meta = el('div', 'meta'); for (const t of m.meta) meta.append(el('span', '', t)); item.append(meta); }
+    if (m.error) item.append(el('div', 'error', m.error));
+    box.append(item);
+  }
+  box.scrollTop = box.scrollHeight;
+}
+
+function setBusy(on) { busy = on; $('send').disabled = on; $('new-chat').disabled = on; if (!on) $('progress').textContent = ''; }
+const fmt = n => n.toFixed(1).replace('.', ',');
+
+// Тексты под коды шлюза: что случилось и что делать.
+async function explain(response) {
+  let message = '';
+  try { message = (await response.json()).error?.message || ''; } catch {}
+  const retry = response.headers.get('Retry-After');
+  switch (response.status) {
+    case 401: setToken(''); return 'Неверный токен. Нажми «Токен» вверху и введи его заново.';
+    case 413: return 'Разговор стал слишком длинным для модели. Нажми «Новый» и спроси снова.';
+    case 429: return `Слишком часто: не больше 6 вопросов в минуту. Повтори через ${retry || 'минуту'} с.`;
+    case 503: return 'Модель занята: очередь заполнена. Подожди полминуты и повтори.';
+    case 502: return 'Модель сейчас выключена на сервере. Попробуй позже.';
+    default: return message || 'Сервер ответил ошибкой ' + response.status + '.';
+  }
+}
+
+async function ask(text) {
+  text = text.trim(); if (!text || busy) return;
+  const token = getToken() || askToken();
+  if (!token) return;
+  question.value = '';
+  const asked = { role: 'user', content: text };
+  history.push(asked);
+  const answer = { role: 'assistant', content: '', pending: true };
+  history.push(answer); render(); setBusy(true);
+  $('progress').textContent = 'Ждём модель (если она занята — запрос в очереди)…';
+  const started = performance.now();
+  try {
+    const response = await fetch(BASE + 'v1/chat/completions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ messages: history.filter(m => !m.pending && !m.error && !m.unanswered).map(({ role, content }) => ({ role, content })) }),
+    });
+    if (!response.ok) throw new Error(await explain(response));
+    const data = await response.json();
+    answer.content = data.choices?.[0]?.message?.content ?? '';
+    const sec = (performance.now() - started) / 1000, tokens = data.usage?.completion_tokens;
+    answer.meta = [tokens ? `${tokens} токенов` : null, `${fmt(sec)} с с учётом очереди`].filter(Boolean);
+  } catch (error) {
+    asked.unanswered = true;  // две реплики user подряд модель путают
+    answer.error = error instanceof TypeError ? 'Нет связи с сервером. Проверь интернет и повтори.' : error.message;
+  } finally {
+    answer.pending = false; setBusy(false); render();
+  }
+}
+
+async function checkServer() {
+  let text = 'Сервер недоступен', on = false;
+  try {
+    const h = await (await fetch(BASE + 'health')).json();
+    on = h.mlx;
+    text = !h.mlx ? 'Модель выключена' : h.busy ? `Модель занята · в очереди ${h.queued}` : 'Модель свободна';
+  } catch {}
+  $('dot').className = 'dot' + (on ? ' on' : '');
+  $('server-state').textContent = text;
+}
+
+$('ask-form').addEventListener('submit', e => { e.preventDefault(); ask(question.value); });
+question.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); ask(question.value); } });
+$('new-chat').addEventListener('click', () => { history = []; render(); question.focus(); });
+$('change-token').addEventListener('click', askToken);
+render(); checkServer(); setInterval(checkServer, 5000);
+</script>
+</body>
+</html>
