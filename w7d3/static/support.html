@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Эми · поддержка «Ветрило»</title>
+<link rel="stylesheet" href="style.css?t={{TOKEN}}">
+</head>
+<body>
+<aside id="card">
+  <div class="brand"><span class="mark">Э</span><div>Эми<small>поддержка VPN «Ветрило» · симуляция</small></div></div>
+  <h2>Клиент в чате</h2>
+  <select id="user"></select>
+  <section><h2>Профиль из CRM</h2><pre id="profile">…</pre></section>
+  <section><h2>Тикеты</h2><pre id="tickets">…</pre></section>
+  <button id="refresh" type="button" class="quiet">Обновить</button>
+</aside>
+<main>
+  <div id="messages"></div>
+  <form id="ask">
+    <textarea id="input" rows="1" placeholder="Сообщение в поддержку" autofocus></textarea>
+    <button type="submit" class="primary">Отправить</button>
+  </form>
+</main>
+<script src="support.js?t={{TOKEN}}"></script>
+</body>
+</html>
