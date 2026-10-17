@@ -284,8 +284,22 @@ fn check(item: &Value, changed: &[String], files: &[FileDiff], sources: &[Source
 }
 
 /// Текст модели может повторить строку из diff: в комментарии бота не должно быть упоминаний, ссылок и HTML.
+/// Внутри `code span` GitHub ничего из этого не рендерит, а entity показал бы буквально — там текст как есть.
 fn plain(s: &str) -> String {
-    s.replace('<', "&lt;").replace('>', "&gt;").replace('@', "@\u{200b}").replace('[', "\\[").replace(']', "\\]")
+    let parts: Vec<&str> = s.split('`').collect();
+    let mut out = String::new();
+    for (i, part) in parts.iter().enumerate() {
+        if i > 0 {
+            out.push('`');
+        }
+        // Нечётный сегмент — код, только если после него есть закрывающий бэктик.
+        if i % 2 == 1 && i + 1 < parts.len() {
+            out.push_str(part);
+        } else {
+            out.push_str(&part.replace('<', "&lt;").replace('>', "&gt;").replace('@', "@\u{200b}").replace('[', "\\[").replace(']', "\\]"));
+        }
+    }
+    out
 }
 
 fn render(findings: &[Finding], dropped: &[String], sources: &[Source]) -> String {
@@ -386,5 +400,13 @@ index 1..2 100644
             {"kind": "bug", "file": "w1/src/main.rs", "title": "x", "detail": ""}]}"#);
         assert_eq!((ok.len(), dropped.len()), (1, 1));
         assert!(verify_findings("не json", &[], &[], &[]).is_err());
+    }
+
+    #[test]
+    fn plain_escapes_text_but_not_code_spans() {
+        assert_eq!(plain("Замените на `if a > 4096 { 4096 }` и <b>"), "Замените на `if a > 4096 { 4096 }` и &lt;b&gt;");
+        assert_eq!(plain("`Result<u32>` для @user"), "`Result<u32>` для @\u{200b}user");
+        // Без закрывающего бэктика GitHub покажет текст как обычный markdown — значит, экранируем.
+        assert_eq!(plain("a ` <script>"), "a ` &lt;script&gt;");
     }
 }
