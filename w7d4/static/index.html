@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Эми · {{PROJECT}}</title>
+<link rel="stylesheet" href="style.css?t={{TOKEN}}">
+</head>
+<body>
+<aside id="card">
+  <div class="brand"><span class="mark">Э</span><div>Эми<small>ассистент разработчика</small></div></div>
+  <h1 id="project-name">{{PROJECT}}</h1>
+  <div id="project-path" class="muted"></div>
+  <section><h2>Ветка</h2><pre id="branch">…</pre></section>
+  <section><h2>Статус</h2><pre id="status">…</pre></section>
+  <section><h2>Последние коммиты</h2><pre id="log">…</pre></section>
+  <button id="refresh" type="button" class="quiet">Обновить</button>
+</aside>
+<main>
+  <div id="messages">
+    <div class="message emi"><div class="label">ЭМИ</div><div class="content">Привет! Спроси про проект: <code>/help как запустить w6d5?</code>. Список команд — <code>/help</code>.</div></div>
+  </div>
+  <form id="ask">
+    <textarea id="input" rows="1" placeholder="/help <вопрос>" autofocus></textarea>
+    <button type="submit" class="primary">Отправить</button>
+  </form>
+</main>
+<script src="app.js?t={{TOKEN}}"></script>
+</body>
+</html>

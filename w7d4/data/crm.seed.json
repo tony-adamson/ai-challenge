@@ -1,0 +1,252 @@
+{
+  "users": [
+    {
+      "id": "u1",
+      "name": "Ирина Соколова",
+      "email": "irina.sokolova@example.com",
+      "plan": "Старт",
+      "price": "249 ₽ в месяц",
+      "subscription": { "status": "expired", "until": "2026-10-12", "autorenew": false },
+      "device_limit": 3,
+      "devices": [
+        { "name": "iPhone 13", "platform": "iOS", "added": "2026-03-02", "last_seen": "2026-10-11" },
+        { "name": "MacBook Air", "platform": "macOS", "added": "2026-03-02", "last_seen": "2026-10-10" }
+      ],
+      "payments": [
+        { "date": "2026-08-12", "amount": "249 ₽", "status": "succeeded", "method": "карта *4417" },
+        { "date": "2026-09-12", "amount": "249 ₽", "status": "succeeded", "method": "карта *4417" }
+      ],
+      "last_connection": { "at": "2026-10-16 21:40", "location": "Финляндия", "result": "ошибка «Подписка неактивна»" }
+    },
+    {
+      "id": "u2",
+      "name": "Олег Миронов",
+      "email": "oleg.mironov@example.com",
+      "plan": "Полгода",
+      "price": "1190 ₽ за 6 месяцев",
+      "subscription": { "status": "active", "until": "2027-02-03", "autorenew": true },
+      "device_limit": 3,
+      "devices": [
+        { "name": "Ноутбук Lenovo", "platform": "Windows", "added": "2026-08-03", "last_seen": "2026-10-17" },
+        { "name": "Pixel 8", "platform": "Android", "added": "2026-08-03", "last_seen": "2026-10-16" },
+        { "name": "Galaxy S10", "platform": "Android", "added": "2025-12-20", "last_seen": "2026-05-20" }
+      ],
+      "payments": [
+        { "date": "2026-08-03", "amount": "1190 ₽", "status": "succeeded", "method": "СБП" }
+      ],
+      "last_connection": { "at": "2026-10-17 11:05", "location": "Казахстан", "result": "подключено" }
+    },
+    {
+      "id": "u3",
+      "name": "Анна Белова",
+      "email": "anna.belova@example.com",
+      "plan": "Старт",
+      "price": "249 ₽ в месяц",
+      "subscription": { "status": "expired", "until": "2026-10-15", "autorenew": true },
+      "device_limit": 3,
+      "devices": [
+        { "name": "Redmi Note 12", "platform": "Android", "added": "2026-05-15", "last_seen": "2026-10-15" }
+      ],
+      "payments": [
+        { "date": "2026-09-15", "amount": "249 ₽", "status": "succeeded", "method": "карта *0932" },
+        { "date": "2026-10-15", "amount": "249 ₽", "status": "pending", "method": "карта *0932", "note": "автопродление, банк не подтвердил платёж" }
+      ],
+      "last_connection": { "at": "2026-10-16 08:12", "location": "Финляндия", "result": "ошибка «Подписка неактивна»" }
+    },
+    {
+      "id": "u4",
+      "name": "Дмитрий Ким",
+      "email": "dmitry.kim@example.com",
+      "plan": "Год",
+      "price": "1990 ₽ за 12 месяцев",
+      "subscription": { "status": "active", "until": "2027-03-01", "autorenew": true },
+      "device_limit": 5,
+      "devices": [
+        { "name": "iPhone 15", "platform": "iOS", "added": "2026-03-01", "last_seen": "2026-10-16" },
+        { "name": "Смарт-ТВ", "platform": "Android TV", "added": "2026-04-11", "last_seen": "2026-10-16" }
+      ],
+      "payments": [
+        { "date": "2026-03-01", "amount": "1990 ₽", "status": "succeeded", "method": "карта *7710" }
+      ],
+      "last_connection": { "at": "2026-10-16 21:10", "location": "Германия", "result": "подключено, скорость 4 Мбит/с" }
+    },
+    {
+      "id": "u5",
+      "name": "Елена Орлова",
+      "email": "elena.orlova@example.com",
+      "plan": "Год",
+      "price": "1990 ₽ за 12 месяцев",
+      "subscription": { "status": "active", "until": "2027-06-10", "autorenew": false },
+      "device_limit": 5,
+      "devices": [
+        { "name": "iPad Air", "platform": "iOS", "added": "2026-06-10", "last_seen": "2026-10-15" },
+        { "name": "Рабочий ноутбук", "platform": "Windows", "added": "2026-06-11", "last_seen": "2026-10-17" }
+      ],
+      "payments": [
+        { "date": "2026-06-10", "amount": "1990 ₽", "status": "succeeded", "method": "СБП" }
+      ],
+      "last_connection": { "at": "2026-10-17 09:30", "location": "Финляндия", "result": "подключено" }
+    },
+    {
+      "id": "u6",
+      "name": "Сергей Павлов",
+      "email": "sergey.pavlov@example.com",
+      "plan": "Полгода",
+      "price": "1190 ₽ за 6 месяцев",
+      "subscription": { "status": "active", "until": "2027-03-27", "autorenew": false },
+      "device_limit": 3,
+      "devices": [
+        { "name": "Android-планшет", "platform": "Android", "added": "2026-09-27", "last_seen": "2026-10-14" }
+      ],
+      "payments": [
+        { "date": "2026-09-27", "amount": "1190 ₽", "status": "succeeded", "method": "карта *2050" },
+        { "date": "2026-09-27", "amount": "1190 ₽", "status": "refunded", "method": "карта *2050", "note": "двойное списание, возврат 2026-10-01" }
+      ],
+      "last_connection": { "at": "2026-10-14 18:00", "location": "Турция", "result": "подключено" }
+    },
+    {
+      "id": "u7",
+      "name": "Мария Гусева",
+      "email": "maria.guseva@example.com",
+      "plan": "Старт",
+      "price": "249 ₽ в месяц",
+      "subscription": { "status": "active", "until": "2026-10-19", "autorenew": true },
+      "device_limit": 3,
+      "devices": [
+        { "name": "iPhone 12", "platform": "iOS", "added": "2026-07-19", "last_seen": "2026-10-17" }
+      ],
+      "payments": [
+        { "date": "2026-09-19", "amount": "249 ₽", "status": "succeeded", "method": "карта *5531" },
+        { "date": "2026-10-16", "amount": "249 ₽", "status": "failed", "method": "карта *5531", "note": "пробное списание перед автопродлением: недостаточно средств" }
+      ],
+      "last_connection": { "at": "2026-10-17 08:45", "location": "Нидерланды", "result": "подключено" }
+    }
+  ],
+  "tickets": [
+    {
+      "id": "T-1001",
+      "user_id": "u6",
+      "subject": "Двойное списание",
+      "status": "resolved",
+      "created": "2026-09-27 15:20",
+      "messages": [
+        { "from": "client", "at": "2026-09-27 15:20", "text": "Оплатил полгода, а деньги списали два раза." },
+        { "from": "assistant", "at": "2026-09-27 15:21", "text": "Два платежа по 1190 ₽ от 2026-09-27 на карту *2050, подписка продлена один раз. Нужна проверка платежей." },
+        { "from": "operator", "at": "2026-09-27 17:02", "text": "Второй платёж вернули на карту, деньги придут за 3–10 рабочих дней." }
+      ]
+    },
+    {
+      "id": "T-1002",
+      "user_id": "u4",
+      "subject": "Низкая скорость вечером",
+      "status": "open",
+      "created": "2026-10-14 20:05",
+      "messages": [
+        { "from": "client", "at": "2026-10-14 20:05", "text": "Вечером видео не грузится, днём всё нормально." },
+        { "from": "assistant", "at": "2026-10-14 20:06", "text": "Предложила проверить скорость без VPN, клиент вернётся с результатом. Локация — Германия." }
+      ]
+    },
+    {
+      "id": "T-1003",
+      "user_id": "u2",
+      "subject": "Настройка на роутере",
+      "status": "waiting_human",
+      "created": "2026-10-15 10:20",
+      "messages": [
+        { "from": "client", "at": "2026-10-15 10:20", "text": "Хочу настроить VPN на роутере Keenetic, чтобы дома работали все устройства, включая телевизор. Есть инструкция?" },
+        { "from": "assistant", "at": "2026-10-15 10:21", "text": "В базе знаний нет инструкции для роутеров. Передала вопрос специалисту." }
+      ]
+    },
+    {
+      "id": "T-1004",
+      "user_id": "u5",
+      "subject": "Банк не открывается с VPN",
+      "status": "waiting_human",
+      "created": "2026-10-15 12:40",
+      "messages": [
+        { "from": "client", "at": "2026-10-15 12:40", "text": "Когда включён VPN, не открывается приложение банка, приходится каждый раз отключать VPN. Можно сделать, чтобы банк работал без VPN?" },
+        { "from": "assistant", "at": "2026-10-15 12:41", "text": "Ответа в базе знаний нет. Передала вопрос специалисту." }
+      ]
+    },
+    {
+      "id": "T-1005",
+      "user_id": "u6",
+      "subject": "Выключить автопродление",
+      "status": "resolved",
+      "created": "2026-10-15 18:05",
+      "messages": [
+        { "from": "client", "at": "2026-10-15 18:05", "text": "Не хочу, чтобы деньги списывались автоматически. Где выключить автопродление?" },
+        { "from": "assistant", "at": "2026-10-15 18:06", "text": "Подсказала: личный кабинет → «Подписка», там включается и выключается автопродление." },
+        { "from": "operator", "at": "2026-10-15 19:30", "text": "Клиент выключил автопродление сам, вопрос решён." }
+      ]
+    },
+    {
+      "id": "T-1006",
+      "user_id": "u7",
+      "subject": "Смена e-mail аккаунта",
+      "status": "open",
+      "created": "2026-10-16 09:10",
+      "messages": [
+        { "from": "client", "at": "2026-10-16 09:10", "text": "Хочу сменить e-mail аккаунта: старая почта больше не работает, а входить в приложение нужно по ней." },
+        { "from": "assistant", "at": "2026-10-16 09:11", "text": "В базе знаний нет ответа про смену e-mail. Передала вопрос специалисту." },
+        { "from": "operator", "at": "2026-10-16 11:02", "text": "Сменить e-mail аккаунта может только специалист поддержки по запросу владельца. Напишите в этот тикет новый e-mail и последние 4 цифры карты, которой оплачивали подписку." }
+      ]
+    },
+    {
+      "id": "T-1007",
+      "user_id": "u1",
+      "subject": "Роутер TP-Link",
+      "status": "resolved",
+      "created": "2026-10-16 13:30",
+      "messages": [
+        { "from": "client", "at": "2026-10-16 13:30", "text": "Можно ли поставить Ветрило на роутер TP-Link? На телевизоре нет приложения." },
+        { "from": "assistant", "at": "2026-10-16 13:31", "text": "В базе знаний нет ответа про роутеры. Передала вопрос специалисту." },
+        { "from": "operator", "at": "2026-10-16 15:45", "text": "Инструкции для роутеров у нас нет: приложение «Ветрило» работает на iOS, Android, Android TV, Windows и macOS. Для телевизора без приложения подключите приставку на Android TV." }
+      ]
+    },
+    {
+      "id": "T-1008",
+      "user_id": "u6",
+      "subject": "Госуслуги не открываются",
+      "status": "waiting_human",
+      "created": "2026-10-16 19:15",
+      "messages": [
+        { "from": "client", "at": "2026-10-16 19:15", "text": "С включённым VPN не открываются Госуслуги и приложение банка. Как сделать, чтобы они работали, а остальное шло через VPN?" },
+        { "from": "assistant", "at": "2026-10-16 19:16", "text": "Ответа в базе знаний нет. Передала вопрос специалисту." }
+      ]
+    },
+    {
+      "id": "T-1009",
+      "user_id": "u5",
+      "subject": "Поменять почту",
+      "status": "waiting_human",
+      "created": "2026-10-16 21:50",
+      "messages": [
+        { "from": "client", "at": "2026-10-16 21:50", "text": "Как поменять e-mail, на который зарегистрирован аккаунт? Перехожу на рабочую почту." },
+        { "from": "assistant", "at": "2026-10-16 21:51", "text": "В базе знаний нет ответа. Передала вопрос специалисту." }
+      ]
+    },
+    {
+      "id": "T-1010",
+      "user_id": "u7",
+      "subject": "Банк и VPN",
+      "status": "open",
+      "created": "2026-10-17 08:50",
+      "messages": [
+        { "from": "client", "at": "2026-10-17 08:50", "text": "Банковское приложение пишет, что не работает с VPN. Можно исключить его из VPN, не выключая VPN целиком?" }
+      ]
+    },
+    {
+      "id": "T-1011",
+      "user_id": "u3",
+      "subject": "Не пришёл чек",
+      "status": "resolved",
+      "created": "2026-10-17 10:05",
+      "messages": [
+        { "from": "client", "at": "2026-10-17 10:05", "text": "Не могу найти чек за сентябрьскую оплату." },
+        { "from": "assistant", "at": "2026-10-17 10:06", "text": "Подсказала, что чек приходит на e-mail аккаунта сразу после оплаты, и предложила проверить папку «Спам»." },
+        { "from": "operator", "at": "2026-10-17 11:20", "text": "Чек нашёлся в папке «Спам», вопрос решён." }
+      ]
+    }
+  ]
+}
