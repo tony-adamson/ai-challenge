@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 
 use crate::help::{norm, unwrap_json, Source, MIN_QUOTE};
 use crate::llm::Llm;
-use crate::rag::{Hit, Rag};
+use crate::rag::{chunk, Hit, Rag};
 
 // ДОПУЩЕНИЕ-4: больше ~60 КБ diff не влезает в контекст вместе с источниками и ответом.
 const MAX_DIFF: usize = 60 * 1024;
@@ -120,6 +120,7 @@ pub async fn run(llm: &Llm, repo: &Path, project: &str, base: &str, head: &str) 
 
 /// Свежий индекс доков + кода затронутых папок, поиск по каждому ханку, лучшие фрагменты доков и кода без повторов.
 async fn retrieve(repo: &Path, dirs: Vec<String>, files: &[FileDiff]) -> Result<Vec<Source>, String> {
+    let mut sources = rules(repo);
     // Ханки по очереди из каждого файла: иначе один большой файл съедает все запросы.
     let mut queries = Vec::new();
     for i in 0.. {
@@ -151,16 +152,27 @@ async fn retrieve(repo: &Path, dirs: Vec<String>, files: &[FileDiff]) -> Result<
     .await
     .map_err(|e| e.to_string())??;
     hits.sort_by(|a, b| b.score.total_cmp(&a.score));
-    let mut sources: Vec<Source> = Vec::new();
     for doc in [true, false] {
         let before = sources.len();
-        for h in hits.iter().filter(|h| is_doc(&h.source) == doc) {
+        for h in hits.iter().filter(|h| is_doc(&h.source) == doc && !RULES_FILES.contains(&h.source.as_str())) {
             if sources.len() - before < MAX_PER_KIND && !sources.iter().any(|s| s.file == h.source && s.text == h.text) {
                 sources.push(Source { file: h.source.clone(), section: h.section.clone(), text: h.text.clone() });
             }
         }
     }
     Ok(sources)
+}
+
+// Правила проекта по смыслу далеки от кода ханка и в поиске проигрывают README про то же API,
+// поэтому корневые файлы правил идут в ревью целиком всегда, а RAG добирает остальные доки и код.
+const RULES_FILES: [&str; 2] = ["CLAUDE.md", "AGENTS.md"];
+
+fn rules(repo: &Path) -> Vec<Source> {
+    RULES_FILES
+        .iter()
+        .filter_map(|f| std::fs::read_to_string(repo.join(f)).ok().map(|text| (f, text)))
+        .flat_map(|(f, text)| chunk(&text).into_iter().map(move |c| Source { file: f.to_string(), section: c.section, text: c.text }))
+        .collect()
 }
 
 fn is_doc(source: &str) -> bool {
@@ -315,7 +327,8 @@ fn render(findings: &[Finding], dropped: &[String], sources: &[Source]) -> Strin
             md.push_str(&format!("- `{at}` **{}** — {}\n", plain(&f.title), plain(&f.detail)));
             if let Some((n, q)) = &f.quote {
                 // Файл и раздел подставляет код по номеру источника, как в /help.
-                md.push_str(&format!("  > «{}» — `{}`\n", plain(&q.split_whitespace().collect::<Vec<_>>().join(" ")), sources[n - 1].label()));
+                // Метка без обёртки в бэктики: в названии раздела бывают свои `…`, они рвали code span.
+                md.push_str(&format!("  > «{}» — {}\n", plain(&q.split_whitespace().collect::<Vec<_>>().join(" ")), plain(&sources[n - 1].label())));
             }
         }
     }
@@ -408,5 +421,16 @@ index 1..2 100644
         assert_eq!(plain("`Result<u32>` для @user"), "`Result<u32>` для @\u{200b}user");
         // Без закрывающего бэктика GitHub покажет текст как обычный markdown — значит, экранируем.
         assert_eq!(plain("a ` <script>"), "a ` &lt;script&gt;");
+    }
+
+    #[test]
+    fn root_rules_file_is_always_a_source() {
+        let dir = std::env::temp_dir().join(format!("emi-rules-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(rules(&dir).is_empty());
+        std::fs::write(dir.join("CLAUDE.md"), "# Правила\n\n## Структура\n\nКаждая папка самодостаточна: собирается отдельно, без общих модулей.\n").unwrap();
+        let found = rules(&dir);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(found.iter().any(|s| s.file == "CLAUDE.md" && s.text.contains("без общих модулей")), "{:?}", found.iter().map(|s| &s.text).collect::<Vec<_>>());
     }
 }
