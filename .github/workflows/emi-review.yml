@@ -1,0 +1,84 @@
+# Эми (w7d2): ревью PR — diff + правила проекта через RAG → один комментарий с находками, проверенными кодом.
+name: Эми — ревью PR
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: emi-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # У PR из форков нет секретов — ревью пропускается, а не падает.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cache/ort.pyke.io
+            w7d2/target
+          key: emi-cargo-${{ runner.os }}-${{ hashFiles('w7d2/Cargo.lock') }}
+          restore-keys: emi-cargo-${{ runner.os }}-
+
+      # Модель эмбеддингов ~480 МБ: без кэша каждый прогон качает её заново.
+      - name: Cache embedding model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/emi
+          key: emi-model-multilingual-e5-small-v1
+
+      - name: Build
+        working-directory: w7d2
+        run: cargo build --release --locked
+
+      - name: Review
+        id: review
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        # Падение ревью тоже публикуется: иначе в PR осталось бы ревью прошлого коммита как актуальное.
+        run: |
+          if ! w7d2/target/release/emi review --repo "$GITHUB_WORKSPACE" --base "origin/$BASE_REF" --head "$HEAD_SHA" > "$RUNNER_TEMP/review.md"; then
+            printf '## Эми: ревью\n\nРевью коммита %s не выполнено — подробности в логе job.\n' "$HEAD_SHA" > "$RUNNER_TEMP/review.md"
+            echo "failed=1" >> "$GITHUB_OUTPUT"
+          fi
+          cat "$RUNNER_TEMP/review.md" >> "$GITHUB_STEP_SUMMARY"
+
+      # Один комментарий на PR: свой ищем по скрытому маркеру, чужие комментарии бота не трогаем.
+      - name: Comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          MARKER='<!-- emi-review -->'
+          { echo "$MARKER"; cat "$RUNNER_TEMP/review.md"; } > "$RUNNER_TEMP/body.md"
+          ID=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$MARKER\"))) | .id" | tail -n1)
+          if [ -n "$ID" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$ID" -F body=@"$RUNNER_TEMP/body.md" > /dev/null
+          else
+            gh pr comment "$PR" --body-file "$RUNNER_TEMP/body.md"
+          fi
+
+      - name: Fail if review failed
+        if: steps.review.outputs.failed == '1'
+        run: exit 1
