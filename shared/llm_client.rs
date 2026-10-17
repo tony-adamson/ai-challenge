@@ -15,5 +15,5 @@ pub fn auth_header() -> String {
 
 pub fn max_tokens(user_limit: u32) -> u32 {
     // Лимит пользователя не может превышать 4096.
-    if user_limit > 4096 { user_limit } else { 4096 }
+    user_limit.min(4096)
 }
