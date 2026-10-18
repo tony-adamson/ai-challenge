@@ -1,4 +1,4 @@
-# ЧЕРНОВИК для фазы 2 — ничего не выполнено. Порт 8780 — предположение, свериться со свободными портами на сервере.
+# Прод: /etc/systemd/system/w7d5-support.service на personal-ru, порт 8780 (Caddy /vetrilo/ → 127.0.0.1:8780).
 # OPERATOR_TOKEN и DEEPSEEK_API_KEY — в корневом ~/ai_challenge/.env на сервере (dotenvy их подхватит), не здесь.
 [Unit]
 Description=w7d5 Эми: сайт-заглушка «Ветрило» и чат поддержки (127.0.0.1:8780, Caddy /vetrilo/)
