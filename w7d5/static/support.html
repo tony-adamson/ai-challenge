@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Эми · поддержка «Ветрило»</title>
+<link rel="stylesheet" href="style.css?t={{TOKEN}}">
+</head>
+<body>
+<nav id="tabs">
+  <button type="button" data-tab="client" class="active">Чат клиента</button>
+  <button type="button" data-tab="operator">Оператор: база знаний</button>
+</nav>
+<div id="client" class="tab">
+<aside id="card">
+  <div class="brand"><span class="mark">Э</span><div>Эми<small>поддержка VPN «Ветрило» · симуляция</small></div></div>
+  <h2>Клиент в чате</h2>
+  <select id="user"></select>
+  <section><h2>Профиль из CRM</h2><pre id="profile">…</pre></section>
+  <section><h2>Тикеты</h2><pre id="tickets">…</pre></section>
+  <button id="refresh" type="button" class="quiet">Обновить</button>
+</aside>
+<main>
+  <div id="messages"></div>
+  <form id="ask">
+    <textarea id="input" rows="1" placeholder="Сообщение в поддержку" autofocus></textarea>
+    <button type="submit" class="primary">Отправить</button>
+  </form>
+</main>
+</div>
+<div id="operator" class="tab" hidden>
+<main id="kb">
+  <form id="kb-form">
+    <h2>Цель для Эми</h2>
+    <textarea id="goal" rows="2">Посмотри тикеты и дополни FAQ тем, о чём спрашивают, а ответа нет</textarea>
+    <button type="submit" class="primary">Запустить</button>
+    <span id="kb-status" class="muted"></span>
+  </form>
+  <section><h2>Шаги (MCP-файлы)</h2><ol id="kb-steps"></ol></section>
+  <section><h2>Отчёт</h2><div id="kb-report" class="message emi"><div class="content"></div></div></section>
+  <section><h2>Правки FAQ — diff черновика, на диск ещё не записаны</h2><pre id="kb-diff"></pre>
+    <button id="kb-apply" type="button" class="primary" disabled>Применить</button> <span id="kb-applied" class="muted"></span></section>
+</main>
+</div>
+<script src="support.js?t={{TOKEN}}"></script>
+</body>
+</html>

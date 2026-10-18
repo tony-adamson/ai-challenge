@@ -1,0 +1,6 @@
+# ЧЕРНОВИК для фазы 2: добавить в блок challenge.hoapps.dev в /etc/caddy/Caddyfile, выше общего reverse_proxy.
+# handle_path срезает префикс: Эми видит /, /site.js, /api/widget/chat — поэтому в страницах только относительные URL.
+redir /vetrilo /vetrilo/
+handle_path /vetrilo/* {
+	reverse_proxy 127.0.0.1:8780
+}

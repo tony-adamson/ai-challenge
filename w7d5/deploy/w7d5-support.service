@@ -1,0 +1,21 @@
+# ЧЕРНОВИК для фазы 2 — ничего не выполнено. Порт 8780 — предположение, свериться со свободными портами на сервере.
+# OPERATOR_TOKEN и DEEPSEEK_API_KEY — в корневом ~/ai_challenge/.env на сервере (dotenvy их подхватит), не здесь.
+[Unit]
+Description=w7d5 Эми: сайт-заглушка «Ветрило» и чат поддержки (127.0.0.1:8780, Caddy /vetrilo/)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=user
+WorkingDirectory=/home/user/ai_challenge/w7d5
+Environment=EMI_ADDR=127.0.0.1:8780
+# ДОПУЩЕНИЕ-5: на проде только DeepSeek — пустой ключ выключает Gemini (env сильнее .env).
+Environment=GEMINI_API_KEY=
+# Индекс FAQ лежит в /tmp под общим именем — свой /tmp, чтобы не делить его с другими экземплярами Эми.
+PrivateTmp=true
+ExecStart=/home/user/ai_challenge/w7d5/target/release/emi support
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

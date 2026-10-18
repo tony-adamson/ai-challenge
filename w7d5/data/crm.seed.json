@@ -1,0 +1,333 @@
+{
+  "brands": [
+    {"id": "vetrilo", "name": "Ветрило", "domain": "vetrilo.example", "color": "#287b57", "countries": ["Финляндия", "Нидерланды", "Германия", "Казахстан"]},
+    {"id": "briz", "name": "Бриз", "domain": "briz.example", "color": "#2f6fb0", "countries": ["Финляндия", "Эстония", "Турция"]},
+    {"id": "shtil", "name": "Штиль", "domain": "shtil.example", "color": "#5b5f97", "countries": ["Германия", "Польша", "Казахстан"]},
+    {"id": "musson", "name": "Муссон", "domain": "musson.example", "color": "#b5602b", "countries": ["Нидерланды", "Турция", "ОАЭ"]},
+    {"id": "passat", "name": "Пассат", "domain": "passat.example", "color": "#8a3f6e", "countries": ["Финляндия", "Германия", "США", "Япония"]}
+  ],
+  "users": [
+    {
+      "id": "c-101",
+      "name": "Ирина Соколова",
+      "email": "irina.sokolova@example.com",
+      "brand": "vetrilo",
+      "plan": {"name": "Месяц", "price": "299 ₽ в месяц"},
+      "subscription": {"status": "expired", "until": "2026-10-12", "autorenew": false},
+      "trial_used": true,
+      "payments": [
+        {"date": "2026-08-12", "amount": "299 ₽", "status": "succeeded", "method": "карта *4417"},
+        {"date": "2026-09-12", "amount": "299 ₽", "status": "succeeded", "method": "карта *4417"}
+      ],
+      "demo_note": "подписка истекла 12 октября"
+    },
+    {
+      "id": "c-102",
+      "name": "Олег Миронов",
+      "email": "oleg.mironov@example.com",
+      "brand": "vetrilo",
+      "plan": {"name": "Год", "price": "2490 ₽ в год"},
+      "subscription": {"status": "active", "until": "2027-02-03", "autorenew": true},
+      "trial_used": true,
+      "payments": [
+        {"date": "2026-02-03", "amount": "2490 ₽", "status": "succeeded", "method": "СБП"}
+      ],
+      "demo_note": "активная подписка, вопрос про страны"
+    },
+    {
+      "id": "c-103",
+      "name": "Анна Белова",
+      "email": "anna.belova@example.com",
+      "brand": "vetrilo",
+      "plan": {"name": "Месяц", "price": "299 ₽ в месяц"},
+      "subscription": {"status": "expired", "until": "2026-10-17", "autorenew": true},
+      "trial_used": true,
+      "payments": [
+        {"date": "2026-09-17", "amount": "299 ₽", "status": "succeeded", "method": "карта *0932"},
+        {"date": "2026-10-17", "amount": "299 ₽", "status": "pending", "method": "карта *0932", "note": "автоплатёж, банк ещё не подтвердил платёж"}
+      ],
+      "demo_note": "платёж в обработке"
+    },
+    {
+      "id": "c-201",
+      "name": "Дмитрий Ким",
+      "email": "dmitry.kim@example.com",
+      "brand": "briz",
+      "plan": {"name": "Месяц", "price": "299 ₽ в месяц"},
+      "subscription": {"status": "active", "until": "2026-11-05", "autorenew": true},
+      "trial_used": true,
+      "payments": [
+        {"date": "2026-10-05", "amount": "299 ₽", "status": "succeeded", "method": "карта *7710"}
+      ],
+      "demo_note": "медленно вечером, есть открытое обращение"
+    },
+    {
+      "id": "c-202",
+      "name": "Елена Орлова",
+      "email": "elena.orlova@example.com",
+      "brand": "briz",
+      "plan": null,
+      "subscription": {"status": "expired", "until": "2026-10-15", "autorenew": false},
+      "trial_used": true,
+      "payments": [],
+      "demo_note": "пробный период закончился"
+    },
+    {
+      "id": "c-203",
+      "name": "Сергей Павлов",
+      "email": "sergey.pavlov@example.com",
+      "brand": "briz",
+      "plan": {"name": "Год", "price": "2490 ₽ в год"},
+      "subscription": {"status": "active", "until": "2027-09-27", "autorenew": false},
+      "trial_used": true,
+      "payments": [
+        {"date": "2026-09-27", "amount": "2490 ₽", "status": "succeeded", "method": "карта *2050"},
+        {"date": "2026-09-27", "amount": "2490 ₽", "status": "refunded", "method": "карта *2050", "note": "двойное списание, возврат оформлен 2026-10-01"}
+      ],
+      "demo_note": "возврат двойного списания"
+    },
+    {
+      "id": "c-301",
+      "name": "Мария Гусева",
+      "email": "maria.guseva@example.com",
+      "brand": "shtil",
+      "plan": {"name": "Месяц", "price": "299 ₽ в месяц"},
+      "subscription": {"status": "active", "until": "2026-11-02", "autorenew": false},
+      "trial_used": true,
+      "payments": [
+        {"date": "2026-10-02", "amount": "299 ₽", "status": "succeeded", "method": "карта *5531"}
+      ],
+      "demo_note": "отменила автоплатёж"
+    },
+    {
+      "id": "c-302",
+      "name": "Павел Егоров",
+      "email": "pavel.egorov@example.com",
+      "brand": "shtil",
+      "plan": {"name": "Месяц", "price": "299 ₽ в месяц"},
+      "subscription": {"status": "expired", "until": "2026-10-14", "autorenew": true},
+      "trial_used": true,
+      "payments": [
+        {"date": "2026-09-14", "amount": "299 ₽", "status": "succeeded", "method": "карта *3308"},
+        {"date": "2026-10-14", "amount": "299 ₽", "status": "failed", "method": "карта *3308", "note": "автоплатёж: недостаточно средств"}
+      ],
+      "demo_note": "автоплатёж отклонён банком"
+    },
+    {
+      "id": "c-303",
+      "name": "Ольга Лебедева",
+      "email": "olga.lebedeva@example.com",
+      "brand": "shtil",
+      "plan": {"name": "Неделя", "price": "99 ₽ в неделю"},
+      "subscription": {"status": "active", "until": "2026-10-22", "autorenew": true},
+      "trial_used": true,
+      "payments": [
+        {"date": "2026-10-15", "amount": "99 ₽", "status": "succeeded", "method": "СБП"}
+      ],
+      "demo_note": "хочет удалить аккаунт"
+    },
+    {
+      "id": "c-401",
+      "name": "Никита Фролов",
+      "email": "nikita.frolov@example.com",
+      "brand": "musson",
+      "plan": null,
+      "subscription": {"status": "trial", "until": "2026-10-20", "autorenew": false},
+      "trial_used": true,
+      "payments": [],
+      "demo_note": "идёт пробный период"
+    },
+    {
+      "id": "c-402",
+      "name": "Татьяна Зайцева",
+      "email": "tatiana.zaitseva@example.com",
+      "brand": "musson",
+      "plan": {"name": "Год", "price": "2490 ₽ в год"},
+      "subscription": {"status": "active", "until": "2027-04-10", "autorenew": true},
+      "trial_used": true,
+      "payments": [
+        {"date": "2026-04-10", "amount": "2490 ₽", "status": "succeeded", "method": "карта *6124"}
+      ],
+      "demo_note": "хочет сменить почту"
+    },
+    {
+      "id": "c-403",
+      "name": "Артём Волков",
+      "email": "artem.volkov@example.com",
+      "brand": "musson",
+      "plan": {"name": "Месяц", "price": "299 ₽ в месяц"},
+      "subscription": {"status": "expired", "until": "2026-07-01", "autorenew": false},
+      "trial_used": true,
+      "payments": [
+        {"date": "2026-06-01", "amount": "299 ₽", "status": "succeeded", "method": "карта *8842"}
+      ],
+      "demo_note": "подписка истекла давно, просит возврат"
+    },
+    {
+      "id": "c-501",
+      "name": "Юлия Морозова",
+      "email": "yulia.morozova@example.com",
+      "brand": "passat",
+      "plan": {"name": "Месяц", "price": "299 ₽ в месяц"},
+      "subscription": {"status": "active", "until": "2026-11-09", "autorenew": true},
+      "trial_used": true,
+      "payments": [
+        {"date": "2026-10-09", "amount": "299 ₽", "status": "succeeded", "method": "карта *1975"}
+      ],
+      "demo_note": "не подключается в офисной сети"
+    },
+    {
+      "id": "c-502",
+      "name": "Константин Романов",
+      "email": "konstantin.romanov@example.com",
+      "brand": "passat",
+      "plan": {"name": "Месяц", "price": "299 ₽ в месяц"},
+      "subscription": {"status": "expired", "until": "2026-10-06", "autorenew": false},
+      "trial_used": true,
+      "payments": [
+        {"date": "2026-10-03", "amount": "299 ₽", "status": "refunded", "method": "карта *4051", "note": "возврат по запросу клиента 2026-10-06"}
+      ],
+      "demo_note": "оформлен возврат"
+    },
+    {
+      "id": "c-503",
+      "name": "Виктория Никитина",
+      "email": "victoria.nikitina@example.com",
+      "brand": "passat",
+      "plan": {"name": "Год", "price": "2490 ₽ в год"},
+      "subscription": {"status": "active", "until": "2027-01-20", "autorenew": true},
+      "trial_used": true,
+      "payments": [
+        {"date": "2026-01-20", "amount": "2490 ₽", "status": "succeeded", "method": "карта *2296"}
+      ],
+      "demo_note": "забыла пароль"
+    }
+  ],
+  "tickets": [
+    {
+      "id": "T-1001",
+      "user_id": "c-203",
+      "subject": "Двойное списание",
+      "status": "resolved",
+      "created": "2026-09-27 15:20",
+      "messages": [
+        {"from": "client", "at": "2026-09-27 15:20", "text": "Оплатил год, а деньги списали два раза."},
+        {"from": "assistant", "at": "2026-09-27 15:21", "text": "Два платежа по 2490 ₽ от 2026-09-27 с карты *2050, подписка продлена один раз. Нужна проверка платежей."},
+        {"from": "operator", "at": "2026-09-27 17:02", "text": "Второй платёж вернули на карту, деньги придут за 3–10 рабочих дней."}
+      ]
+    },
+    {
+      "id": "T-1002",
+      "user_id": "c-201",
+      "subject": "Низкая скорость вечером",
+      "status": "open",
+      "created": "2026-10-14 20:05",
+      "messages": [
+        {"from": "client", "at": "2026-10-14 20:05", "text": "Вечером видео не грузится, днём всё нормально."},
+        {"from": "assistant", "at": "2026-10-14 20:06", "text": "Предложила сменить страну и проверить скорость без VPN, клиент вернётся с результатом. Страна — Турция."}
+      ]
+    },
+    {
+      "id": "T-1003",
+      "user_id": "c-102",
+      "subject": "Настройка на роутере",
+      "status": "waiting_human",
+      "created": "2026-10-15 10:20",
+      "messages": [
+        {"from": "client", "at": "2026-10-15 10:20", "text": "Хочу настроить VPN на роутере Keenetic, чтобы дома работали все устройства, включая телевизор. Есть инструкция?"},
+        {"from": "assistant", "at": "2026-10-15 10:21", "text": "В базе знаний нет инструкции для роутеров. Передала вопрос специалисту."}
+      ]
+    },
+    {
+      "id": "T-1004",
+      "user_id": "c-402",
+      "subject": "Банк не открывается с VPN",
+      "status": "waiting_human",
+      "created": "2026-10-15 12:40",
+      "messages": [
+        {"from": "client", "at": "2026-10-15 12:40", "text": "Когда включён VPN, не открывается приложение банка, приходится каждый раз отключать VPN. Можно сделать, чтобы банк работал без VPN?"},
+        {"from": "assistant", "at": "2026-10-15 12:41", "text": "Ответа в базе знаний нет. Передала вопрос специалисту."}
+      ]
+    },
+    {
+      "id": "T-1005",
+      "user_id": "c-301",
+      "subject": "Отключить автоплатёж",
+      "status": "resolved",
+      "created": "2026-10-15 18:05",
+      "messages": [
+        {"from": "client", "at": "2026-10-15 18:05", "text": "Не хочу, чтобы деньги списывались автоматически. Где отключить автоплатёж?"},
+        {"from": "assistant", "at": "2026-10-15 18:06", "text": "Подсказала: личный кабинет → «Подписка» → «Отключить автоплатёж»."},
+        {"from": "operator", "at": "2026-10-15 19:30", "text": "Клиентка отключила автоплатёж сама, вопрос решён."}
+      ]
+    },
+    {
+      "id": "T-1006",
+      "user_id": "c-503",
+      "subject": "Подарить подписку",
+      "status": "resolved",
+      "created": "2026-10-16 09:10",
+      "messages": [
+        {"from": "client", "at": "2026-10-16 09:10", "text": "Хочу оплатить подписку маме, у неё свой аккаунт. Можно подарить подписку?"},
+        {"from": "assistant", "at": "2026-10-16 09:11", "text": "В базе знаний нет ответа про подарочные подписки. Передала вопрос специалисту."},
+        {"from": "operator", "at": "2026-10-16 11:02", "text": "Подарочных подписок пока нет: подписка оплачивается только из кабинета того аккаунта, на котором будет работать. Войдите в кабинет мамы и оплатите там своей картой."}
+      ]
+    },
+    {
+      "id": "T-1007",
+      "user_id": "c-101",
+      "subject": "Роутер TP-Link",
+      "status": "resolved",
+      "created": "2026-10-16 13:30",
+      "messages": [
+        {"from": "client", "at": "2026-10-16 13:30", "text": "Можно ли поставить Ветрило на роутер TP-Link? На телевизоре нет приложения."},
+        {"from": "assistant", "at": "2026-10-16 13:31", "text": "В базе знаний нет ответа про роутеры. Передала вопрос специалисту."},
+        {"from": "operator", "at": "2026-10-16 15:45", "text": "Инструкции для роутеров у нас нет: приложение работает на iPhone, Android, Windows и macOS. Для телевизора без приложения подключите приставку на Android."}
+      ]
+    },
+    {
+      "id": "T-1008",
+      "user_id": "c-203",
+      "subject": "Госуслуги не открываются",
+      "status": "waiting_human",
+      "created": "2026-10-16 19:15",
+      "messages": [
+        {"from": "client", "at": "2026-10-16 19:15", "text": "С включённым VPN не открываются Госуслуги и приложение банка. Как сделать, чтобы они работали, а остальное шло через VPN?"},
+        {"from": "assistant", "at": "2026-10-16 19:16", "text": "Ответа в базе знаний нет. Передала вопрос специалисту."}
+      ]
+    },
+    {
+      "id": "T-1009",
+      "user_id": "c-302",
+      "subject": "Подписка в подарок",
+      "status": "waiting_human",
+      "created": "2026-10-16 21:50",
+      "messages": [
+        {"from": "client", "at": "2026-10-16 21:50", "text": "Можно купить подписку в подарок другу? Он не хочет сам платить картой."},
+        {"from": "assistant", "at": "2026-10-16 21:51", "text": "В базе знаний нет ответа. Передала вопрос специалисту."}
+      ]
+    },
+    {
+      "id": "T-1010",
+      "user_id": "c-501",
+      "subject": "Банк и VPN",
+      "status": "open",
+      "created": "2026-10-17 08:50",
+      "messages": [
+        {"from": "client", "at": "2026-10-17 08:50", "text": "Банковское приложение пишет, что не работает с VPN. Можно исключить его из VPN, не выключая VPN целиком?"}
+      ]
+    },
+    {
+      "id": "T-1011",
+      "user_id": "c-103",
+      "subject": "Не пришёл чек",
+      "status": "resolved",
+      "created": "2026-10-17 10:05",
+      "messages": [
+        {"from": "client", "at": "2026-10-17 10:05", "text": "Не могу найти чек за сентябрьскую оплату."},
+        {"from": "assistant", "at": "2026-10-17 10:06", "text": "Подсказала, что чек приходит на почту аккаунта сразу после оплаты, и предложила проверить папку «Спам»."},
+        {"from": "operator", "at": "2026-10-17 11:20", "text": "Чек нашёлся в папке «Спам», вопрос решён."}
+      ]
+    }
+  ]
+}

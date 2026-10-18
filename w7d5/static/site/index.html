@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ветрило — VPN-сервис (демо)</title>
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<header>
+  <a id="home" class="logo" href="./">Ветрило</a>
+  <span class="demo">демо-заглушка · все данные вымышленные</span>
+  <button id="logout" type="button" class="link" hidden>Выйти</button>
+</header>
+<main>
+  <section id="landing" hidden>
+    <h1>VPN-сервис «Ветрило»</h1>
+    <p class="muted">Пять витрин одного сервиса: тарифы и правила общие, различаются название и страны серверов. Выберите витрину.</p>
+    <div id="brands" class="grid"></div>
+  </section>
+  <section id="login" hidden>
+    <h1 id="login-title"></h1>
+    <p class="muted">Вход в личный кабинет. Это демо: выберите аккаунт, пароль не нужен.</p>
+    <div id="accounts" class="list"></div>
+    <button id="back" type="button" class="link">← другие витрины</button>
+  </section>
+  <section id="cabinet" hidden>
+    <h1 id="hello"></h1>
+    <div class="grid">
+      <article class="card"><h2>Подписка</h2><dl id="subscription"></dl></article>
+      <article class="card"><h2>Страны серверов</h2><ul id="countries"></ul></article>
+      <article class="card wide"><h2>Платежи</h2><table id="payments"></table></article>
+      <article class="card help">
+        <h2>Нужна помощь?</h2>
+        <p>Эми — ассистент поддержки. Она видит ваш кабинет и отвечает сразу, а если вопрос не решится — передаст его специалисту.</p>
+        <button id="help" type="button" class="primary">Написать в поддержку</button>
+      </article>
+    </div>
+  </section>
+  <p id="error" class="error" hidden></p>
+</main>
+<script src="emi-widget.js"></script>
+<script src="site.js"></script>
+</body>
+</html>
